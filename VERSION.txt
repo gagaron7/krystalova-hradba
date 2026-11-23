@@ -1,0 +1,8 @@
+commit: ed414fcca383c1e54cc77525f13b073c5ac53a85
+čas: 2026-11-23 20:30 CET
+cache: hradba-v6
+
+Jedna souborová verze krystalova-hradba.html jede i z disku a v iframe.
+První vlny sypou mince rychleji a po stezce jde truhla s bonusovými krystaly.
+Prodej věže funguje během vlny, schopnosti v pauze čekají a dvojnásobná rychlost se po záseku nerozjede donekonečna.
+Cache service workeru je hradba-v6.
