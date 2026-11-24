@@ -1,15 +1,20 @@
+import { LEGACY_META_COSTS, META } from "./config.js";
+
 const KEY = "krystalova-hradba-v1";
+const META_IDS = new Set(META.map((m) => m.id));
 
 let memory = null;
 
 export function defaultSave() {
   return {
-    v: 1,
+    v: 3,
     crystals: 0,
     bestWave: 0,
-    bestByMap: { les: 0, had: 0, propast: 0 },
-    mapId: "les",
+    bestByStage: {},
+    cleared: 0,
+    stage: 1,
     owned: {},
+    seenEnemies: {},
     sound: true,
     volume: 0.7,
     music: true,
@@ -20,9 +25,12 @@ export function defaultSave() {
     earlyCalls: 0,
     masteries: 0,
     paths: 0,
+    branches: 0,
     cardsPicked: 0,
     runs: 0,
     kills: 0,
+    victories: 0,
+    migrationRefund: 0,
   };
 }
 
@@ -49,30 +57,61 @@ function writeRaw(text) {
   }
 }
 
+const num = (v, d = 0) => (Number.isFinite(v) ? v : d);
+const obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
+
+/**
+ * Převod starých uložených her: staré uzly stromu (v1/v2) nejdou přenést 1:1,
+ * proto se za ně vrátí všechny utracené krystaly a hráč si nový strom koupí znovu.
+ */
+function migrate(source) {
+  const out = { ...source };
+  const v = num(source.v, 1);
+  const owned = obj(source.owned);
+  if (v < 3) {
+    let refund = 0;
+    for (const [id, value] of Object.entries(owned)) {
+      if (value && LEGACY_META_COSTS[id]) refund += LEGACY_META_COSTS[id];
+    }
+    out.crystals = num(source.crystals) + refund;
+    out.migrationRefund = refund;
+    out.owned = {};
+    out.cleared = 0;
+    out.stage = 1;
+    out.bestByStage = {};
+    out.v = 3;
+  }
+  return out;
+}
+
 function normalize(data) {
   const base = defaultSave();
-  const source = data && typeof data === "object" ? data : {};
-  const owned = source.owned && typeof source.owned === "object" && !Array.isArray(source.owned)
-    ? source.owned
-    : {};
-  const bestByMap = {
-    ...base.bestByMap,
-    ...(source.bestByMap && typeof source.bestByMap === "object" ? source.bestByMap : {}),
-  };
-  if (!source.bestByMap && Number.isFinite(source.bestWave)) bestByMap.les = source.bestWave;
+  const source = migrate(obj(data));
+  const owned = {};
+  for (const [id, value] of Object.entries(obj(source.owned))) {
+    if (!META_IDS.has(id)) continue;
+    const rank = Math.max(0, Math.floor(Number(value) || 0));
+    if (rank > 0) owned[id] = rank;
+  }
+  const cleared = Math.max(0, Math.floor(num(source.cleared)));
+  const stage = Math.min(cleared + 1, Math.max(1, Math.floor(num(source.stage, 1))));
   return {
     ...base,
     ...source,
+    v: 3,
     owned,
-    bestByMap,
-    mapId: source.mapId || "les",
-    ach: source.ach && typeof source.ach === "object" ? source.ach : {},
+    cleared,
+    stage,
+    bestByStage: obj(source.bestByStage),
+    seenEnemies: obj(source.seenEnemies),
+    ach: obj(source.ach),
     volume: Number.isFinite(source.volume) ? source.volume : 0.7,
     music: source.music !== false,
     tutorialDone: !!source.tutorialDone,
-    crystals: Number.isFinite(source.crystals) ? source.crystals : 0,
-    bestWave: Number.isFinite(source.bestWave) ? source.bestWave : 0,
+    crystals: Math.max(0, Math.floor(num(source.crystals))),
+    bestWave: num(source.bestWave),
     sound: source.sound !== false,
+    migrationRefund: num(source.migrationRefund),
   };
 }
 
@@ -85,6 +124,7 @@ export function loadSave() {
       return clone(memory);
     }
     memory = normalize(JSON.parse(raw));
+    writeRaw(JSON.stringify(memory));
     return clone(memory);
   } catch {
     memory = defaultSave();

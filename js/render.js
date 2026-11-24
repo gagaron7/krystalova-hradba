@@ -363,6 +363,77 @@ function drawSniper(ctx, tower) {
   ctx.restore();
 }
 
+function drawBase(ctx, tower) {
+  const lv = tower.level;
+  ctx.save();
+  ctx.translate(tower.x, tower.y);
+  ctx.rotate(tower.angle);
+  ctx.translate(-tower.recoil * 3, 0);
+  ctx.fillStyle = "#8a7a5c";
+  ctx.strokeStyle = "#1a140e";
+  ctx.lineWidth = 2;
+  ctx.fillRect(-2, -3, 14 + lv * 2, 6);
+  ctx.strokeRect(-2, -3, 14 + lv * 2, 6);
+  ctx.fillStyle = "#c8b48a";
+  ctx.beginPath();
+  ctx.arc(0, 0, 6 + lv, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#f6ecd2";
+  ctx.beginPath();
+  ctx.arc(0, 0, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawLaser(ctx, tower, now) {
+  const lv = tower.level;
+  ctx.save();
+  ctx.translate(tower.x, tower.y);
+  ctx.rotate(tower.angle);
+  ctx.fillStyle = "#3a1838";
+  ctx.strokeStyle = "#140c12";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-7, -7);
+  ctx.lineTo(10 + lv * 2, -3);
+  ctx.lineTo(10 + lv * 2, 3);
+  ctx.lineTo(-7, 7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  const glow = 0.6 + 0.4 * Math.sin(now * 8);
+  ctx.fillStyle = `rgba(255, 106, 213, ${glow})`;
+  ctx.beginPath();
+  ctx.arc(10 + lv * 2, 0, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ffd6f4";
+  ctx.beginPath();
+  ctx.arc(-1, 0, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBank(ctx, tower, now) {
+  const lv = tower.level;
+  ctx.save();
+  ctx.translate(tower.x, tower.y);
+  ctx.fillStyle = "#6b4a14";
+  ctx.strokeStyle = "#1a1206";
+  ctx.lineWidth = 2;
+  roundRect(ctx, -9, -6, 18, 12, 3);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#ffd56a";
+  for (let i = 0; i < Math.min(5, 1 + lv); i++) {
+    ctx.beginPath();
+    ctx.ellipse(-5 + (i % 3) * 5, -7 - Math.floor(i / 3) * 4 + Math.sin(now * 3 + i) * 0.8, 3.2, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawTower(ctx, tower, now) {
   const pop = tower.born > 0 ? 1 + Math.sin((1 - tower.born) * Math.PI) * 0.28 : 1;
   ctx.save();
@@ -373,10 +444,10 @@ function drawTower(ctx, tower, now) {
   ctx.ellipse(0, 12, 16, 6, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "#3a3428";
-  ctx.strokeStyle = "#c8b48a";
+  ctx.strokeStyle = tower.type === "base" ? "#c8b48a" : (CONFIG.towers[tower.type] || CONFIG.base).color;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(0, 0, 14 + tower.level, 0, Math.PI * 2);
+  ctx.arc(0, 0, 14 + Math.min(4, tower.level * 0.6), 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = "#2a241c";
@@ -388,12 +459,16 @@ function drawTower(ctx, tower, now) {
   ctx.translate(tower.x, tower.y);
   ctx.scale(pop, pop);
   ctx.translate(-tower.x, -tower.y);
-  if (tower.type === "cannon") drawCannon(ctx, tower);
-  else if (tower.type === "frost") drawFrost(ctx, tower, now);
-  else if (tower.type === "sniper") drawSniper(ctx, tower);
-  else if (tower.type === "storm") drawStorm(ctx, tower, now);
-  else if (tower.type === "venom") drawVenom(ctx, tower);
-  else drawArcher(ctx, tower);
+  const vis = tower.type === "base" ? tower : { ...tower, level: Math.max(1, tower.level - 2) };
+  if (tower.type === "base") drawBase(ctx, tower, now);
+  else if (tower.type === "cannon") drawCannon(ctx, vis);
+  else if (tower.type === "frost") drawFrost(ctx, vis, now);
+  else if (tower.type === "sniper") drawSniper(ctx, vis);
+  else if (tower.type === "storm") drawStorm(ctx, vis, now);
+  else if (tower.type === "venom") drawVenom(ctx, vis);
+  else if (tower.type === "laser") drawLaser(ctx, vis, now);
+  else if (tower.type === "bank") drawBank(ctx, vis, now);
+  else drawArcher(ctx, vis);
   ctx.restore();
   drawPips(ctx, tower);
 }
@@ -410,21 +485,22 @@ function drawPips(ctx, tower) {
   for (let i = 0; i < n; i++) {
     ctx.beginPath();
     ctx.arc(start + i * gap, 0, 2.4, 0, Math.PI * 2);
-    ctx.fillStyle = i >= 3 ? PATH_COLORS[tower.branch || 0] : "#f6f1e6";
+    const spec = tower.type !== "base" ? (CONFIG.towers[tower.type] || CONFIG.base).color : "#f6f1e6";
+    ctx.fillStyle = i >= 5 ? PATH_COLORS[tower.branch || 0] : i >= 3 ? spec : "#f6f1e6";
     ctx.fill();
     ctx.lineWidth = 1;
     ctx.strokeStyle = "rgba(0,0,0,0.6)";
     ctx.stroke();
   }
   ctx.restore();
-  if (tower.level >= 4) {
+  if (tower.level >= 6) {
     ctx.save();
     ctx.translate(tower.x, tower.y);
     ctx.strokeStyle = PATH_COLORS[tower.branch || 0];
     ctx.globalAlpha = 0.85;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(0, 0, 19 + (tower.level - 4) * 2, 0, Math.PI * 2);
+    ctx.arc(0, 0, 20 + (tower.level - 6) * 2, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
@@ -444,6 +520,8 @@ export function drawTowerIcon(canvas, type, level, branch) {
     angle: -Math.PI / 2, recoil: 0, born: 0, icon: true,
   }, 0);
 }
+
+let frozenNow = false;
 
 function drawEnemy(ctx, e, x, y, now) {
   ctx.save();
@@ -583,6 +661,75 @@ function drawEnemy(ctx, e, x, y, now) {
     ctx.beginPath();
     ctx.arc(0, 6, 4, 0, Math.PI * 2);
     ctx.fill();
+  } else if (e.type === "healer") {
+    ctx.fillStyle = "#2f6b46";
+    ctx.beginPath();
+    ctx.moveTo(0, -r - 2);
+    ctx.lineTo(r, r);
+    ctx.lineTo(-r, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#8dffb0";
+    ctx.fillRect(-1.6, -4, 3.2, 10);
+    ctx.fillRect(-5, -0.6, 10, 3.2);
+  } else if (e.type === "golem") {
+    ctx.fillStyle = "#6e6152";
+    roundRect(ctx, -r, -r * 0.9, r * 2, r * 1.8, 5);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = "#3b332a";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.6, -r * 0.3);
+    ctx.lineTo(-r * 0.1, r * 0.2);
+    ctx.lineTo(r * 0.5, -r * 0.1);
+    ctx.stroke();
+    ctx.fillStyle = "#ffb15a";
+    ctx.beginPath();
+    ctx.arc(-5, -4, 2.4, 0, Math.PI * 2);
+    ctx.arc(5, -4, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (e.type === "ghost") {
+    ctx.globalAlpha = e.hidden ? 0.22 : 0.9;
+    ctx.fillStyle = "#e8f4ff";
+    ctx.beginPath();
+    ctx.arc(0, -2, r, Math.PI, 0);
+    ctx.lineTo(r, r);
+    for (let k = 0; k < 4; k++) ctx.lineTo(r - (k + 0.5) * (r / 2), r - (k % 2 ? 0 : 5));
+    ctx.lineTo(-r, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#2a3550";
+    ctx.beginPath();
+    ctx.arc(-4, -3, 2.2, 0, Math.PI * 2);
+    ctx.arc(4, -3, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (e.type === "lord") {
+    const pulse = 0.5 + 0.5 * Math.sin(now * 4);
+    ctx.fillStyle = `rgba(255, 51, 88, ${0.18 + pulse * 0.15})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#1a0a24";
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#f0c14a";
+    ctx.beginPath();
+    for (let k = 0; k < 5; k++) {
+      const a = -Math.PI / 2 + (k - 2) * 0.38;
+      ctx.moveTo(Math.cos(a) * (r - 4), Math.sin(a) * (r - 4));
+      ctx.lineTo(Math.cos(a) * (r + 12), Math.sin(a) * (r + 12));
+      ctx.lineTo(Math.cos(a + 0.18) * (r - 2), Math.sin(a + 0.18) * (r - 2));
+    }
+    ctx.fill();
+    ctx.fillStyle = "#ff3358";
+    ctx.beginPath();
+    ctx.arc(-8, -2, 3.4, 0, Math.PI * 2);
+    ctx.arc(8, -2, 3.4, 0, Math.PI * 2);
+    ctx.fill();
   } else {
     ctx.fillStyle = "#6d4ea8";
     ctx.beginPath();
@@ -615,6 +762,23 @@ function drawEnemy(ctx, e, x, y, now) {
     ctx.arc(0, 0, r + 4, now, now + 1.4);
     ctx.stroke();
   }
+  if (frozenNow) {
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = "#bff8ff";
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.5;
+    for (let k = 0; k < 3; k++) {
+      const a = k * 2.1 + e.wobble;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * (r - 4), Math.sin(a) * (r - 4));
+      ctx.lineTo(Math.cos(a) * (r + 5), Math.sin(a) * (r + 5));
+      ctx.stroke();
+    }
+  }
   if (e.flash > 0) {
     ctx.globalAlpha = Math.min(0.85, e.flash / 0.1);
     ctx.fillStyle = "#fff";
@@ -634,6 +798,20 @@ function drawEnemy(ctx, e, x, y, now) {
     ctx.fillStyle = e.boss ? "#ff3358" : ratio < 0.35 ? "#ffb15a" : "#ff5d73";
     ctx.fillRect(bx, by, bw * ratio, 4);
   }
+}
+
+/** Ikona nepřítele pro kartu představení. */
+export function drawEnemyIcon(canvas, type) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const size = canvas.clientWidth || 72;
+  canvas.width = Math.round(size * dpr);
+  canvas.height = Math.round(size * dpr);
+  const ctx = canvas.getContext("2d");
+  const proto = CONFIG.enemies[type] || CONFIG.enemies.shadow;
+  const scale = (size / (proto.radius * 2 + 30)) * dpr;
+  ctx.setTransform(scale, 0, 0, scale, (size * dpr) / 2, (size * dpr) / 2 + 3 * scale);
+  frozenNow = false;
+  drawEnemy(ctx, { type, radius: proto.radius, hp: 1, maxHp: 1, shield: proto.shield || 0, slowFactor: 1, wobble: 0, flying: !!proto.flying, boss: false, hidden: false }, 0, 0, 0);
 }
 
 function drawProjectile(ctx, p, now) {
@@ -740,13 +918,13 @@ export function render(ctx, game, now, view) {
     const filled = game.towers.some((t) => t.slot === i);
     if (filled) continue;
     let state = i === selectedSlot ? "selected" : "empty";
-    if (game.armed) state = { armed: CONFIG.towers[game.armed].color, selected: i === selectedSlot };
+    if (game.armed) state = { armed: CONFIG.base.color, selected: i === selectedSlot };
     drawSlot(ctx, game.slots[i], state, now);
   }
 
-  if (selectedTower) {
+  if (selectedTower && selectedTower.type !== "bank") {
     const stats = game.statsFor(selectedTower);
-    const cfg = CONFIG.towers[selectedTower.type];
+    const cfg = selectedTower.type === "base" ? CONFIG.base : CONFIG.towers[selectedTower.type];
     drawRange(ctx, selectedTower.x, selectedTower.y, stats.range, cfg.color);
   }
 
@@ -761,9 +939,10 @@ export function render(ctx, game, now, view) {
 
   for (const tower of game.towers) drawTower(ctx, tower, now);
 
+  frozenNow = game.freezeT > 0;
   for (const e of enemies) {
     const p = pointAt(game.path, e.dist);
-    const bob = Math.sin(now * (e.flying ? 6 : 8) + e.wobble) * (e.flying ? 8 : 2.4);
+    const bob = frozenNow ? 0 : Math.sin(now * (e.flying ? 6 : 8) + e.wobble) * (e.flying ? 8 : 2.4);
     drawEnemy(ctx, e, p.x, p.y + bob, now);
     if (e.brittleT > 0 || e.acidT > 0) {
       ctx.save();
@@ -792,7 +971,7 @@ export function render(ctx, game, now, view) {
       ctx.stroke();
     } else {
       ctx.strokeStyle = b.color;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = b.width || 3;
       ctx.beginPath();
       ctx.moveTo(b.x1, b.y1);
       ctx.lineTo(b.x2, b.y2);
@@ -800,6 +979,45 @@ export function render(ctx, game, now, view) {
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 1;
       ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  for (const m of game.meteors || []) {
+    if (m.done) continue;
+    const k = Math.max(0, Math.min(1, (m.t - m.delay) / m.fall));
+    ctx.save();
+    ctx.strokeStyle = "rgba(255, 177, 90, 0.8)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 5]);
+    ctx.lineDashOffset = now * 30;
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, m.r * (0.5 + 0.5 * k), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (m.t >= m.delay) {
+      const sx0 = m.x + 160;
+      const sy0 = m.y - 420;
+      const mx = sx0 + (m.x - sx0) * k;
+      const my = sy0 + (m.y - sy0) * k;
+      const grad = ctx.createLinearGradient(mx + 40, my - 100, mx, my);
+      grad.addColorStop(0, "rgba(255, 120, 40, 0)");
+      grad.addColorStop(1, "rgba(255, 210, 120, 0.9)");
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 9;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(mx + 40, my - 104);
+      ctx.lineTo(mx, my);
+      ctx.stroke();
+      ctx.fillStyle = "#ffe1a8";
+      ctx.beginPath();
+      ctx.arc(mx, my, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ff7a2a";
+      ctx.beginPath();
+      ctx.arc(mx, my, 5, 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
   }
@@ -843,8 +1061,30 @@ export function render(ctx, game, now, view) {
   const W = v.cw;
   const H = v.ch;
   if (game.freezeT > 0) {
-    ctx.fillStyle = "rgba(140, 220, 255, 0.13)";
+    ctx.fillStyle = "rgba(140, 220, 255, 0.16)";
     ctx.fillRect(0, 0, W, H);
+    const edge = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.7);
+    edge.addColorStop(0, "rgba(200, 245, 255, 0)");
+    edge.addColorStop(1, "rgba(200, 245, 255, 0.45)");
+    ctx.fillStyle = edge;
+    ctx.fillRect(0, 0, W, H);
+    const frac = game.freezeMax > 0 ? Math.max(0, game.freezeT / game.freezeMax) : 0;
+    const bw = Math.min(220, W * 0.6);
+    const py = H - 50;
+    ctx.fillStyle = "rgba(8, 20, 30, 0.78)";
+    roundRect(ctx, W / 2 - bw / 2 - 8, py, bw + 16, 36, 12);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(126, 246, 255, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "#dff8ff";
+    ctx.font = "700 14px Georgia, Palatino, serif";
+    ctx.textAlign = "center";
+    ctx.fillText("❄ Čas zamrzl · " + game.freezeT.toFixed(1).replace(".", ",") + " s", W / 2, py + 17);
+    ctx.fillStyle = "rgba(126, 246, 255, 0.25)";
+    ctx.fillRect(W / 2 - bw / 2, py + 25, bw, 4);
+    ctx.fillStyle = "#7ef6ff";
+    ctx.fillRect(W / 2 - bw / 2, py + 25, bw * frac, 4);
   }
   if (game.slowMo > 0) {
     ctx.fillStyle = `rgba(255, 220, 160, ${0.16 * Math.min(1, game.slowMo / 0.4)})`;

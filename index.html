@@ -27,14 +27,14 @@
           <h1>Krystalová hradba</h1>
         </div>
         <div class="chips">
-          <div class="chip"><small>Nejlepší vlna</small><b id="menu-best">0</b></div>
+          <div class="chip"><small>Dobyté stezky</small><b id="menu-cleared">0</b></div>
           <div class="chip chip-cyan"><small>Krystaly</small><b id="menu-crystals">0</b></div>
         </div>
-        <div id="menu-goal" class="goal"></div>
-        <h3 class="label">Stezka</h3>
-        <div id="map-picker" class="map-picker"></div>
+        <button id="menu-stage" class="stage-card" type="button"></button>
         <button id="btn-play" class="btn btn-gold btn-big" type="button">Hrát</button>
+        <div id="menu-goal" class="goal"></div>
         <div class="grid2">
+          <button id="btn-campaign" class="btn btn-ghost" type="button">🗺 Cesta</button>
           <button id="btn-tree" class="btn btn-ghost" type="button">Vylepšení <span id="tree-badge" class="badge hidden">0</span></button>
           <button id="btn-ach" class="btn btn-ghost" type="button">Úspěchy</button>
           <button id="btn-settings" class="btn btn-ghost" type="button">Nastavení</button>
@@ -42,6 +42,21 @@
         </div>
         <p id="install-hint" class="install-hint hidden">Tip: Sdílet → Přidat na plochu. Hra pak poběží přes celou obrazovku i offline.</p>
       </div>
+    </section>
+
+    <!-- CAMPAIGN -->
+    <section id="screen-campaign" class="screen">
+      <header class="topbar">
+        <button id="btn-campaign-back" class="btn btn-ghost btn-sm" type="button">‹ Zpět</button>
+        <h2>Cesta</h2>
+        <div class="crystal-pill"><i class="gem-dot"></i><b id="campaign-crystals">0</b></div>
+      </header>
+      <div id="campaign-list" class="campaign scroll"></div>
+      <footer class="campaign-foot">
+        <canvas id="campaign-preview" class="campaign-preview"></canvas>
+        <div class="campaign-info"><b id="campaign-name"></b><small id="campaign-sub"></small></div>
+        <button id="btn-campaign-play" class="btn btn-gold" type="button">Hrát</button>
+      </footer>
     </section>
 
     <!-- META TREE -->
@@ -83,10 +98,11 @@
         <button class="btn btn-ghost wide" type="button" data-fs>⛶ Celá obrazovka</button>
         <h3 class="label">Jak se hraje</h3>
         <div class="prose">
-          <p>Klepni na kamenný kruh u stezky a vyber věž dole. Nebo nejdřív klepni na věž dole a pak na kámen.</p>
-          <p>Klepnutím na věž ji vylepšíš. Na 3. úrovni si vybereš jednu ze dvou specializací.</p>
-          <p>Po vlnách 3, 5, 8, 10… si vybereš kartu. Po každém pádu získáš krystaly na trvalá vylepšení.</p>
-          <p><b>Souhry:</b> Bouře a Střelec dávají víc zpomaleným stínům, Dělo víc otráveným, Ostrostřelec prostřelí štíty.</p>
+          <p>Klepni na kamenný kruh u stezky a postav <b>neutrální věž</b>. Po dvou vylepšeních (úroveň 3) si vybereš její <b>specializaci</b>: Střelec, Dělo, Mrazák… Další specializace odemkneš na Cestě a ve stromu.</p>
+          <p>Každá stezka má 25 vln a na konci <b>Vládce noci</b>. Porazíš ho a otevře se další, těžší stezka s novou mapou.</p>
+          <p>I prohraná hra dá krystaly. Za ně si ve stromu kupuješ trvalá vylepšení. Plně vylepšený strom stezku vždycky zvládne.</p>
+          <p><b>Schopnosti:</b> Meteorický déšť sám najde největší skupiny. Zmrazení času úplně zastaví všechny nepřátele.</p>
+          <p><b>Souhry:</b> Bouře, Střelec a Paprsek dávají víc zpomaleným, Dělo víc otráveným, Ostrostřelec prostřelí štíty.</p>
         </div>
         <button id="btn-reset" class="btn btn-danger wide" type="button">Smazat postup</button>
         <div id="reset-dialog" class="card-box hidden">
@@ -163,6 +179,7 @@
         <div class="logo-gem small" aria-hidden="true"></div>
         <h2 id="sum-title">Krystal pohasl</h2>
         <p id="sum-record" class="record hidden">Nový rekord!</p>
+        <p id="sum-unlock" class="sum-unlock hidden"></p>
         <dl class="sum-grid">
           <div><dt>Vlna</dt><dd id="sum-wave">0</dd></div>
           <div><dt>Zabito</dt><dd id="sum-kills">0</dd></div>
@@ -172,11 +189,35 @@
         <p class="sum-crystal-label">Získané krystaly</p>
         <p class="sum-crystal" id="sum-crystals">+0</p>
         <div id="sum-goal" class="goal"></div>
+        <button id="btn-next-stage" class="btn btn-gold btn-big hidden" type="button">Další stezka</button>
         <button id="btn-again" class="btn btn-gold btn-big" type="button">Hrát znovu</button>
         <div class="grid2">
           <button id="btn-sum-tree" class="btn btn-ghost" type="button">Vylepšení <span id="sum-badge" class="badge hidden">0</span></button>
           <button id="btn-sum-menu" class="btn btn-ghost" type="button">Menu</button>
         </div>
+      </div>
+    </div>
+
+    <div id="intro-layer" class="overlay intro hidden">
+      <div class="dialog" id="intro-card">
+        <p class="eyebrow">Nový nepřítel</p>
+        <canvas id="intro-icon" class="intro-icon"></canvas>
+        <h2 id="intro-name"></h2>
+        <p id="intro-text" class="prose"></p>
+        <div class="intro-rows">
+          <div class="intro-row good"><small>Slabý proti</small><b id="intro-weak"></b></div>
+          <div class="intro-row bad"><small>Odolá</small><b id="intro-strong"></b></div>
+        </div>
+        <button id="btn-intro-ok" class="btn btn-gold" type="button">Rozumím</button>
+        <p class="prose small">Hra stojí, dokud neklepneš.</p>
+      </div>
+    </div>
+
+    <div id="notice-layer" class="overlay hidden">
+      <div class="dialog">
+        <h2>Nová verze hry</h2>
+        <p id="notice-text" class="prose"></p>
+        <button id="btn-notice-ok" class="btn btn-gold" type="button">Jdeme na to</button>
       </div>
     </div>
 

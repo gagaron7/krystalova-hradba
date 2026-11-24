@@ -1,7 +1,7 @@
-verze: 2.0 (cache hradba-v7)
-čas: 2026-11-24 18:12 CET
+verze: 3.0 (cache hradba-v8)
+čas: 2026-11-24 20:05 CET
 
-Nové rozhraní: horní lišta, hrací plocha, spodní dok se všemi 6 věžemi (mřížka 3×2) a panel věže.
-Celá obrazovka (Fullscreen API, na iPhonu návod Přidat na plochu), 100dvh + safe-area.
-Specializace věží na 3. úrovni (2 cesty, úrovně 4–5), souhry věží, karty po vlnách 3/5/8/10…,
-nová větev stromu Taktika a karty, cíl Další vylepšení v menu i po hře.
+Cesta se stezkami (10 ručně navržených map + procedurální), boss Vládce noci na 25. vlně.
+Neutrální věž → specializace na 3. úrovni, mistrovské cesty ze stromu (úroveň 6–7).
+Nový strom s úrovněmi (5 záložek), stropy rostou s dobytými stezkami.
+Rychlost 1–4×, automatický meteor, spolehlivé zmrazení času, karty představení nepřátel.

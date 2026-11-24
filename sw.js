@@ -1,4 +1,4 @@
-const CACHE = "hradba-v7";
+const CACHE = "hradba-v8";
 
 const ASSETS = [
   "./",

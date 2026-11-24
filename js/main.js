@@ -1,7 +1,10 @@
-import { ACHIEVEMENTS, BRANCHES, CARDS, CONFIG, RARITY, SYNERGIES, TARGET_MODES, TOWER_ORDER, mapById, sellValue } from "./config.js";
+import {
+  ACHIEVEMENTS, CARDS, CONFIG, ENEMY_INFO, META, META_TABS, RARITY, SYNERGIES, TARGET_MODES, TOWER_ORDER,
+  fmt, metaAvailable, metaById, metaCap, metaCost, metaValueText, sellValue, stageMap, stageReward,
+} from "./config.js";
 import { createAudio } from "./audio.js";
 import { Game } from "./game.js";
-import { render, drawTowerIcon } from "./render.js";
+import { render, drawTowerIcon, drawEnemyIcon } from "./render.js";
 import { defaultSave, loadSave, writeSave } from "./storage.js";
 
 const $ = (id) => document.getElementById(id);
@@ -26,10 +29,10 @@ function buzz(pattern) {
 }
 
 const HINTS = {
-  build: "Klepni na kamenný kruh u stezky a dole vyber věž.",
+  build: "Klepni na kamenný kruh u stezky a pak na Postavit věž.",
   coins: "Mince přiletí samy. Můžeš je i sebrat klepnutím.",
-  upgrade: "Klepni na postavenou věž a vylepši ji.",
-  early: "Další vlnu vyvolej dřív tlačítkem vpravo dole — dostaneš bonus.",
+  upgrade: "Klepni na věž a vylepši ji. Na úrovni 3 si vybereš specializaci.",
+  early: "Další vlnu vyvolej dřív tlačítkem vpravo — dostaneš bonus.",
 };
 
 const game = new Game({
@@ -38,19 +41,28 @@ const game = new Game({
   onRunEnd: (result) => onRunEnd(result),
   hintDone: () => finishTutorial(),
   progress: (kind) => noteProgress(kind),
+  firstSeen: (type) => {
+    if (save.seenEnemies[type]) return false;
+    save.seenEnemies[type] = true;
+    writeSave(save);
+    return true;
+  },
 });
 game.hintDone = !!save.tutorialDone;
-game.setOwned(save.owned);
+game.setOwned(save.owned, save.cleared);
+game.setStage(save.stage);
 window.__game = game;
 
 let currentScreen = "menu";
-let treeTab = "sila";
+let treeTab = "utok";
 let treeToastTimer = 0;
 let lastBanner = "";
+let campaignSel = save.stage;
 
 /* ================= helpers ================= */
 
 function cz(n) {
+  if (Math.abs(n) >= 10000) return fmt(n);
   const rounded = Math.round(n * 10) / 10;
   return String(rounded).replace(".", ",");
 }
@@ -66,10 +78,6 @@ function crystalWord(n) {
   return csPlural(n, "krystal", "krystaly", "krystalů");
 }
 
-function metaById(id) {
-  return CONFIG.meta.find((node) => node.id === id);
-}
-
 function setText(el, text) {
   if (el && el.textContent !== text) el.textContent = text;
 }
@@ -79,6 +87,10 @@ function setHtml(el, html) {
     el.__html = html;
     el.innerHTML = html;
   }
+}
+
+function towerCfg(type) {
+  return type === "base" ? CONFIG.base : CONFIG.towers[type];
 }
 
 /* ================= layout ================= */
@@ -224,6 +236,7 @@ function noteProgress(kind) {
   if (kind === "master") save.masteries = (save.masteries || 0) + 1;
   if (kind === "early") save.earlyCalls = (save.earlyCalls || 0) + 1;
   if (kind === "path") save.paths = (save.paths || 0) + 1;
+  if (kind === "branch") save.branches = (save.branches || 0) + 1;
   if (kind === "card") save.cardsPicked = (save.cardsPicked || 0) + 1;
   writeSave(save);
   grantAchievements();
@@ -251,46 +264,66 @@ function grantAchievements() {
 
 /* ================= screens ================= */
 
+const SCREENS = ["menu", "campaign", "settings", "tree", "game", "ach"];
+
 function showScreen(name) {
   currentScreen = name;
-  for (const id of ["menu", "settings", "tree", "game", "ach"]) {
-    $("screen-" + id).classList.toggle("active", id === name);
-  }
+  for (const id of SCREENS) $("screen-" + id).classList.toggle("active", id === name);
   if (name !== "game") {
     $("pause-layer").classList.add("hidden");
     $("summary-layer").classList.add("hidden");
+    $("intro-layer").classList.add("hidden");
   }
   syncFsButtons();
   requestAnimationFrame(layout);
 }
 
 function refreshCrystals() {
-  setText($("menu-crystals"), String(save.crystals));
-  setText($("tree-crystals"), String(save.crystals));
+  const text = fmt(save.crystals);
+  setText($("menu-crystals"), text);
+  setText($("tree-crystals"), text);
+  setText($("campaign-crystals"), text);
+}
+
+/* ---- cíle ve stromu ---- */
+
+function nodeState(node) {
+  const rank = save.owned[node.id] || 0;
+  const cap = metaCap(node, save.cleared);
+  const open = metaAvailable(node, save.owned, save.cleared);
+  const cost = rank < cap ? metaCost(node, rank) : 0;
+  return { rank, cap, open, cost, maxed: rank >= cap };
 }
 
 function goalInfo() {
-  const avail = CONFIG.meta.filter((n) => !save.owned[n.id] && n.req.every((r) => save.owned[r]));
-  const affordable = avail.filter((n) => n.cost <= save.crystals).sort((a, b) => a.cost - b.cost);
-  const next = avail.slice().sort((a, b) => a.cost - b.cost)[0] || null;
-  return { avail, affordable, next };
+  const buyable = [];
+  let next = null;
+  for (const node of META) {
+    const st = nodeState(node);
+    if (!st.open || st.maxed) continue;
+    if (st.cost <= save.crystals) buyable.push({ node, st });
+    if (!next || st.cost < next.st.cost) next = { node, st };
+  }
+  buyable.sort((a, b) => a.st.cost - b.st.cost);
+  return { buyable, next };
 }
 
 function goalHtml() {
-  const { affordable, next } = goalInfo();
-  if (!next) return `<div class="goal-row"><b>Strom vylepšení je kompletní!</b></div>`;
-  if (affordable.length) {
-    const names = affordable.slice(0, 2).map((n) => n.name).join(", ");
-    return `<div class="goal-row"><b>Můžeš koupit ${affordable.length} ${csPlural(affordable.length, "vylepšení", "vylepšení", "vylepšení")}</b><span><i class="gem-dot"></i> ${save.crystals}</span></div>
+  const { buyable, next } = goalInfo();
+  if (!next) return `<div class="goal-row"><b>Strom je pro tuhle stezku naplno!</b></div><small class="prose small">Dobyj další stezku a stropy vylepšení se zvednou.</small>`;
+  if (buyable.length) {
+    const names = buyable.slice(0, 3).map((x) => x.node.name).join(", ");
+    return `<div class="goal-row"><b>Můžeš koupit ${buyable.length} ${csPlural(buyable.length, "vylepšení", "vylepšení", "vylepšení")}</b><span><i class="gem-dot"></i> ${fmt(save.crystals)}</span></div>
       <div class="goal-bar"><i style="width:100%"></i></div><small class="prose small">Třeba: ${names}</small>`;
   }
-  const pct = Math.min(100, Math.round((save.crystals / next.cost) * 100));
-  return `<div class="goal-row"><b>Další cíl: ${next.name}</b><span>${save.crystals} / ${next.cost}</span></div>
-    <div class="goal-bar"><i style="width:${pct}%"></i></div><small class="prose small">${next.desc} · chybí ${next.cost - save.crystals} ${crystalWord(next.cost - save.crystals)}</small>`;
+  const pct = Math.min(100, Math.round((save.crystals / next.st.cost) * 100));
+  const miss = next.st.cost - save.crystals;
+  return `<div class="goal-row"><b>Další cíl: ${next.node.name}</b><span>${fmt(save.crystals)} / ${fmt(next.st.cost)}</span></div>
+    <div class="goal-bar"><i style="width:${pct}%"></i></div><small class="prose small">Chybí ${fmt(miss)} ${crystalWord(miss)}</small>`;
 }
 
 function refreshBadges() {
-  const n = goalInfo().affordable.length;
+  const n = goalInfo().buyable.length;
   for (const id of ["tree-badge", "sum-badge"]) {
     const el = $(id);
     el.textContent = String(n);
@@ -298,102 +331,194 @@ function refreshBadges() {
   }
 }
 
-function renderMaps() {
-  const el = $("map-picker");
-  el.innerHTML = CONFIG.maps.map((map) => {
-    const best = (save.bestByMap && save.bestByMap[map.id]) || 0;
-    const open = save.bestWave >= map.unlockWave;
-    const on = save.mapId === map.id;
-    const mult = String(map.crystalMult).replace(".", ",");
-    const detail = open
-      ? `×${mult} krystaly${best ? "<br>rekord: vlna " + best : ""}`
-      : `🔒 od vlny ${map.unlockWave}`;
-    return `<button type="button" class="map-chip${on ? " is-on" : ""}${open ? "" : " is-locked"}" data-map="${map.id}">
-      <span><b>${map.name}</b><br><small style="text-align:left">${map.blurb}</small></span>
-      <small>${detail}</small>
-    </button>`;
-  }).join("");
+/* ---- náhled mapy ---- */
+
+function drawMapPreview(cv, map) {
+  if (!cv) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const w = cv.clientWidth || 96;
+  const h = cv.clientHeight || 72;
+  cv.width = Math.round(w * dpr);
+  cv.height = Math.round(h * dpr);
+  const c = cv.getContext("2d");
+  const b = mapBounds(map);
+  const s = Math.min(w / (b.x1 - b.x0), h / (b.y1 - b.y0));
+  const ox = (w - (b.x1 - b.x0) * s) / 2 - b.x0 * s;
+  const oy = (h - (b.y1 - b.y0) * s) / 2 - b.y0 * s;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.fillStyle = "#13201a";
+  c.fillRect(0, 0, w, h);
+  c.setTransform(dpr * s, 0, 0, dpr * s, dpr * ox, dpr * oy);
+  c.strokeStyle = "#8a7356";
+  c.lineWidth = 30;
+  c.lineJoin = "round";
+  c.lineCap = "round";
+  c.beginPath();
+  map.path.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+  c.stroke();
+  c.fillStyle = "rgba(200, 180, 138, 0.7)";
+  for (const sl of map.slots) {
+    c.beginPath();
+    c.arc(sl.x, sl.y, 11, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.fillStyle = "#7ef6ff";
+  c.beginPath();
+  c.arc(map.crystal.x, map.crystal.y, 18, 0, Math.PI * 2);
+  c.fill();
+  c.fillStyle = "#c9b6ff";
+  c.beginPath();
+  c.arc(map.portal.x, map.portal.y, 14, 0, Math.PI * 2);
+  c.fill();
 }
+
+function stageStatus(n) {
+  if (n <= save.cleared) return "done";
+  if (n === save.cleared + 1) return "open";
+  return "locked";
+}
+
+function stageLine(n) {
+  const best = save.bestByStage[n] || 0;
+  const st = stageStatus(n);
+  if (st === "done") return `✓ Dobyto${best ? " · rekord vlna " + best : ""}`;
+  if (st === "open") return best ? `Rekord: vlna ${best} / 25` : "Nová stezka · 25 vln a Vládce noci";
+  return "🔒 Nejdřív dobyj předchozí stezku";
+}
+
+/* ================= menu ================= */
 
 function showMenu() {
   game.toMenu();
-  if (!mapById(save.mapId) || save.bestWave < mapById(save.mapId).unlockWave) save.mapId = "les";
-  game.setMap(save.mapId || "les");
-  setText($("menu-best"), String(save.bestWave));
+  save.stage = Math.min(save.cleared + 1, Math.max(1, save.stage || 1));
+  game.setOwned(save.owned, save.cleared);
+  game.setStage(save.stage);
+  const map = stageMap(save.stage);
+  setText($("menu-cleared"), String(save.cleared));
   refreshCrystals();
-  renderMaps();
+  $("menu-stage").innerHTML = `<canvas class="stage-prev"></canvas>
+    <span class="stage-txt"><small>Stezka ${save.stage}</small><b>${map.name}</b><em>${stageLine(save.stage)}</em></span>
+    <span class="stage-go">🗺</span>`;
+  drawMapPreview($("menu-stage").querySelector("canvas"), map);
+  setText($("btn-play"), `Hrát · stezka ${save.stage}`);
   $("menu-goal").innerHTML = goalHtml();
   refreshBadges();
   const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   $("install-hint").classList.toggle("hidden", !(mobile && !isStandalone()));
   showScreen("menu");
+  if (save.migrationRefund > 0) {
+    $("notice-text").innerHTML = `Hra dostala velkou aktualizaci: <b>Cestu</b> se stezkami, neutrální věže se specializacemi a úplně nový, hlubší strom vylepšení.<br><br>Stará vylepšení se do nového stromu nedají přenést, proto ti vracím všech <b>${save.migrationRefund} ${crystalWord(save.migrationRefund)}</b>, které jsi za ně utratil.`;
+    $("notice-layer").classList.remove("hidden");
+  }
 }
 
-function startRun() {
+function startRun(stage) {
   audio.unlock();
   audio.play("ui");
+  const n = Math.min(save.cleared + 1, Math.max(1, stage || save.stage || 1));
+  save.stage = n;
+  writeSave(save);
   $("summary-layer").classList.add("hidden");
+  game.setOwned(save.owned, save.cleared);
+  game.setStage(n);
   game.startRun();
   sellArm = 0;
   stripKey = "";
   sheetKey = "";
   showScreen("game");
-  buildStrip();
+}
+
+/* ================= campaign ================= */
+
+function renderCampaign() {
+  const last = Math.max(save.cleared + 4, 6);
+  const items = [];
+  for (let n = 1; n <= last; n++) {
+    const map = stageMap(n);
+    const st = stageStatus(n);
+    const reward = st === "locked" || st === "open" ? `<span class="cnode-reward">Odměna: ${stageReward(n)}</span>` : "";
+    items.push(`<button type="button" class="cnode is-${st}${n === campaignSel ? " is-sel" : ""}" data-stage="${n}" style="--off:${[0, 22, 44, 22][(n - 1) % 4]}px">
+      <span class="cnode-num">${st === "done" ? "✓" : st === "locked" ? "🔒" : n}</span>
+      <span class="cnode-txt"><b>${n}. ${map.name}</b><small>${stageLine(n)}</small>${reward}</span>
+    </button>`);
+  }
+  $("campaign-list").innerHTML = `<div class="campaign-trail">${items.join("")}</div>`;
+  syncCampaignFoot();
+  const sel = $("campaign-list").querySelector(".is-sel");
+  if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: "center" });
+}
+
+function syncCampaignFoot() {
+  const map = stageMap(campaignSel);
+  setText($("campaign-name"), `Stezka ${campaignSel}: ${map.name}`);
+  setText($("campaign-sub"), stageLine(campaignSel));
+  drawMapPreview($("campaign-preview"), map);
+  const open = stageStatus(campaignSel) !== "locked";
+  $("btn-campaign-play").disabled = !open;
+  setText($("btn-campaign-play"), open ? "Hrát" : "🔒");
+}
+
+function showCampaign() {
+  campaignSel = Math.min(save.cleared + 1, save.stage);
+  refreshCrystals();
+  showScreen("campaign");
+  renderCampaign();
 }
 
 /* ================= meta tree ================= */
 
-const TAB_NAMES = { sila: "Síla", zlato: "Zlato", srdce: "Srdce", takt: "Karty" };
-
 function renderTree() {
   $("tree-goal").innerHTML = goalHtml();
-  $("tree-tabs").innerHTML = BRANCHES.map((branch) => {
-    const nodes = CONFIG.meta.filter((n) => n.branch === branch.id);
-    const owned = nodes.filter((n) => save.owned[n.id]).length;
-    const ready = nodes.some((n) => !save.owned[n.id] && n.req.every((r) => save.owned[r]) && n.cost <= save.crystals);
-    return `<button type="button" class="tab${treeTab === branch.id ? " is-on" : ""}" data-tab="${branch.id}">
-      <span>${TAB_NAMES[branch.id] || branch.name}${ready ? '<i class="dot"></i>' : ""}</span><small>${owned}/${nodes.length}</small></button>`;
+  $("tree-tabs").innerHTML = META_TABS.map((tab) => {
+    const nodes = META.filter((n) => n.tab === tab.id);
+    const ready = nodes.some((n) => {
+      const st = nodeState(n);
+      return st.open && !st.maxed && st.cost <= save.crystals;
+    });
+    const ranks = nodes.reduce((sum, n) => sum + (save.owned[n.id] || 0), 0);
+    return `<button type="button" class="tab${treeTab === tab.id ? " is-on" : ""}" data-tab="${tab.id}">
+      <span>${tab.name}${ready ? '<i class="dot"></i>' : ""}</span><small>${ranks}</small></button>`;
   }).join("");
-
-  const nodes = CONFIG.meta.filter((n) => n.branch === treeTab);
-  const ids = new Set(nodes.map((n) => n.id));
-  const kids = {};
-  const roots = [];
-  for (const n of nodes) {
-    const parent = n.req.find((r) => ids.has(r));
-    if (parent) (kids[parent] = kids[parent] || []).push(n);
-    else roots.push(n);
-  }
-  const out = [];
-  const walk = (n, depth) => {
-    out.push(nodeHtml(n, Math.min(3, depth)));
-    for (const k of kids[n.id] || []) walk(k, depth + 1);
-  };
-  roots.forEach((n) => walk(n, 0));
+  const nodes = META.filter((n) => n.tab === treeTab);
   const scroll = $("tree-scroll");
   const top = scroll.scrollTop;
-  scroll.innerHTML = `<h3 class="label">${(BRANCHES.find((b) => b.id === treeTab) || {}).name || ""}</h3>` + out.join("");
+  scroll.innerHTML = nodes.map(nodeHtml).join("") + `<p class="prose small tree-note">Každá dobytá stezka zvedne stropy vylepšení a odemkne nové uzly.</p>`;
   scroll.scrollTop = top;
 }
 
-function nodeHtml(node, depth) {
-  const owned = !!save.owned[node.id];
-  const ready = node.req.every((id) => save.owned[id]);
-  const afford = save.crystals >= node.cost;
-  const cls = ["node", "depth-" + depth];
-  let cost = `<i class="gem-dot"></i>${node.cost}`;
-  if (owned) {
-    cls.push("is-owned");
-    cost = "✓ Máš";
-  } else if (!ready) {
+function nodeHtml(node) {
+  const st = nodeState(node);
+  const cls = ["node"];
+  let cost;
+  let desc;
+  if (node.unit) {
+    const cur = st.rank ? metaValueText(node, st.rank) : "zatím nic";
+    desc = st.maxed ? `Teď ${cur}` : `${cur} → <b>${metaValueText(node, st.rank + 1)}</b>`;
+  } else desc = node.desc;
+  if (!st.open) {
     cls.push("is-locked");
-    cost = `🔒 ${node.cost}`;
-  } else if (afford) cls.push("is-ready");
-  else cls.push("is-poor");
-  let desc = node.desc;
-  if (!owned && !ready) desc += ` · nejdřív ${node.req.map((id) => metaById(id)?.name || id).join(", ")}`;
+    if (node.stage && save.cleared < node.stage) cost = `🔒 stezka ${node.stage}`;
+    else cost = "🔒";
+    const need = (node.req || []).filter((r) => !(save.owned[r] > 0)).map((r) => metaById(r)?.name || r);
+    if (node.stage && save.cleared < node.stage) desc += ` · odemkne dobytí ${node.stage}. stezky`;
+    else if (need.length) desc += ` · nejdřív ${need.join(", ")}`;
+  } else if (st.maxed) {
+    cls.push("is-owned");
+    const more = node.hardMax ? st.cap < node.hardMax : !!node.perStage;
+    cost = st.cap > 1 ? "MAX" : "✓ Máš";
+    if (more) desc += " · víc po další stezce";
+  } else if (st.cost <= save.crystals) {
+    cls.push("is-ready");
+    cost = `<i class="gem-dot"></i>${fmt(st.cost)}`;
+  } else {
+    cls.push("is-poor");
+    cost = `<i class="gem-dot"></i>${fmt(st.cost)}`;
+  }
+  const pips = st.cap > 1
+    ? `<span class="node-rank">${st.rank}/${st.cap}</span>`
+    : "";
   return `<button type="button" class="${cls.join(" ")}" data-meta="${node.id}">
-    <span class="node-name">${node.name}</span>
+    <span class="node-name">${node.name}${pips}</span>
     <span class="node-desc">${desc}</span>
     <span class="node-cost">${cost}</span>
   </button>`;
@@ -410,33 +535,33 @@ function treeToast(text) {
 function buyMeta(id, button) {
   const node = metaById(id);
   if (!node) return;
-  if (save.owned[id]) {
-    treeToast("Už máš: " + node.name);
-    return;
-  }
-  if (!node.req.every((req) => save.owned[req])) {
-    treeToast("Nejdřív: " + node.req.map((req) => metaById(req)?.name || req).join(", "));
+  const st = nodeState(node);
+  if (!st.open) {
+    if (node.stage && save.cleared < node.stage) treeToast(`Odemkne se po dobytí ${node.stage}. stezky`);
+    else treeToast("Nejdřív: " + (node.req || []).map((r) => metaById(r)?.name || r).join(", "));
     audio.play("deny");
     return;
   }
-  if (save.crystals < node.cost) {
-    treeToast(`Chybí ${node.cost - save.crystals} ${crystalWord(node.cost - save.crystals)}`);
-    audio.play("deny");
-    button.classList.remove("is-shaking");
-    void button.offsetWidth;
-    button.classList.add("is-shaking");
+  if (st.maxed) {
+    treeToast(node.perStage || node.hardMax ? "Na víc úrovní dobyj další stezku" : "Už máš: " + node.name);
     return;
   }
-  save.crystals -= node.cost;
-  save.owned[id] = true;
+  if (save.crystals < st.cost) {
+    treeToast(`Chybí ${fmt(st.cost - save.crystals)} ${crystalWord(st.cost - save.crystals)}`);
+    audio.play("deny");
+    shake(button);
+    return;
+  }
+  save.crystals -= st.cost;
+  save.owned[id] = st.rank + 1;
   writeSave(save);
-  game.setOwned(save.owned);
+  game.setOwned(save.owned, save.cleared);
   audio.play("upgrade");
   buzz(14);
   refreshCrystals();
   renderTree();
   refreshBadges();
-  treeToast("Získáno: " + node.name);
+  treeToast(st.cap > 1 ? `${node.name}: úroveň ${st.rank + 1}` : "Získáno: " + node.name);
 }
 
 function showTree() {
@@ -473,66 +598,51 @@ function toggleSound() {
   audio.play("ui");
 }
 
-/* ================= dock: tower strip ================= */
+/* ================= dock: build bar ================= */
 
 let stripKey = "";
 let sheetKey = "";
 let sellArm = 0;
 
+function specsUnlocked() {
+  return TOWER_ORDER.filter((t) => game.unlocked(t));
+}
+
 function buildStrip() {
   const strip = $("strip");
-  const key = TOWER_ORDER.map((t) => (game.unlocked(t) ? 1 : 0)).join("");
-  if (key === stripKey) return;
-  stripKey = key;
-  strip.innerHTML = TOWER_ORDER.map((type) => {
-    const cfg = CONFIG.towers[type];
-    const locked = !game.unlocked(type);
-    return `<button type="button" role="listitem" class="tcard${locked ? " is-locked" : ""}" data-build="${type}" style="--c:${cfg.color}">
-      <canvas width="40" height="40"></canvas>
-      <span class="tcard-name">${cfg.name}</span>
-      <span class="tcard-cost">${locked ? "🔒 strom" : `<i class="coin"></i><span data-price>${game.buildCost(type)}</span>`}</span>
-    </button>`;
-  }).join("");
-  strip.querySelectorAll("[data-build]").forEach((btn) => {
-    drawTowerIcon(btn.querySelector("canvas"), btn.dataset.build, 1, 0);
-  });
-}
-
-function syncStrip() {
-  const strip = $("strip");
-  const slotSel = game.selected && game.selected.kind === "slot";
-  strip.classList.toggle("is-target", !!slotSel);
-  strip.querySelectorAll("[data-build]").forEach((btn) => {
-    const type = btn.dataset.build;
-    if (btn.classList.contains("is-locked")) return;
-    const price = game.buildCost(type);
-    btn.classList.toggle("is-broke", game.coins < price);
-    btn.classList.toggle("is-armed", game.armed === type);
-    const priceEl = btn.querySelector("[data-price]");
-    if (priceEl) setText(priceEl, String(price));
-  });
-}
-
-function onCard(type, btn) {
-  audio.unlock();
-  if (game.mode !== "play" || game.paused) return;
-  if (!game.unlocked(type)) {
-    game.toastMsg("Odemkni ve stromu vylepšení");
-    audio.play("deny");
-    shake(btn);
-    return;
+  const slotSel = game.selected && game.selected.kind === "slot" && !game.towerAtSlot(game.selected.i);
+  const price = game.buildCost();
+  const key = [slotSel ? 1 : 0, game.armed ? 1 : 0, price, specsUnlocked().length].join("|");
+  if (key !== stripKey) {
+    stripKey = key;
+    const label = slotSel ? "Postavit věž sem" : game.armed ? "Stavíš… klepej na kameny" : "Postavit věž";
+    const sub = slotSel ? "Neutrální věž, na úrovni 3 vybereš specializaci" : game.armed ? "Klepni sem pro zrušení" : "Vyber kámen, nebo klepni sem a pak na kameny";
+    strip.innerHTML = `<button type="button" class="buildbtn${game.armed ? " is-armed" : ""}${slotSel ? " is-target" : ""}" data-build="1">
+        <canvas width="40" height="40"></canvas>
+        <span class="buildbtn-txt"><b>${label}</b><small>${sub}</small></span>
+        <span class="buildbtn-cost"><i class="coin"></i><span data-price>${price}</span></span>
+      </button>
+      <button type="button" class="specpill" data-specs="1"><small>Specializace</small><b>${specsUnlocked().length}/${TOWER_ORDER.length}</b></button>`;
+    drawTowerIcon(strip.querySelector("canvas"), "base", 1, 0);
   }
+  const btn = strip.querySelector("[data-build]");
+  if (btn) btn.classList.toggle("is-broke", game.coins < price);
+}
+
+function onBuild(btn) {
+  audio.unlock();
+  if (game.mode !== "play" || game.halted) return;
   const sel = game.selected;
   if (sel && sel.kind === "slot" && !game.towerAtSlot(sel.i)) {
-    const before = game.towers.length;
-    game.build(type);
-    if (game.towers.length === before) shake(btn);
+    if (!game.build()) shake(btn);
+    stripKey = "";
     return;
   }
-  game.armed = game.armed === type ? null : type;
+  game.armed = !game.armed;
   game.selected = null;
-  if (game.armed) game.toastMsg("Klepni na zářící kámen");
+  if (game.armed) game.toastMsg("Klepej na zářící kameny");
   audio.play("ui");
+  stripKey = "";
 }
 
 function shake(el) {
@@ -547,6 +657,12 @@ function shake(el) {
 const PATH_COLORS = ["#ffd56a", "#7ef6ff"];
 
 function statChips(tower, stats) {
+  if (tower.type === "bank") {
+    const chips = [`<span class="stat">💰 <b>+${stats.income}</b> / vlna</span>`];
+    if (stats.bankInterest) chips.push(`<span class="stat">% <b>${Math.round(stats.bankInterest * 100)} %</b> úroky</span>`);
+    if (stats.lootAura) chips.push(`<span class="stat">✦ <b>+${Math.round(stats.lootAura * 100)} %</b> kořist</span>`);
+    return chips.join("");
+  }
   const eff = game.effective(stats);
   const chips = [
     `<span class="stat">⚔ <b>${cz(eff.damage)}</b></span>`,
@@ -554,23 +670,32 @@ function statChips(tower, stats) {
     `<span class="stat">◎ <b>${Math.round(stats.range)}</b></span>`,
   ];
   if (stats.splash) chips.push(`<span class="stat">💥 <b>${Math.round(stats.splash)}</b></span>`);
-  if (stats.slow) chips.push(`<span class="stat">❄ <b>${Math.round(Math.min(0.72, stats.slow * (1 + game.bonuses.slowPower)) * 100)} %</b></span>`);
+  if (stats.slow) chips.push(`<span class="stat">❄ <b>${Math.round(Math.min(0.75, stats.slow * (1 + game.bonuses.slowPower)) * 100)} %</b></span>`);
   if (stats.chain) chips.push(`<span class="stat">⚡ <b>${stats.chain}×</b></span>`);
-  if (stats.poison) chips.push(`<span class="stat">☠ <b>${Math.round(stats.poison)}</b>/s</span>`);
+  if (stats.poison) chips.push(`<span class="stat">☠ <b>${cz(stats.poison * game.bonuses.damage)}</b>/s</span>`);
   if (stats.shots && stats.shots > 1) chips.push(`<span class="stat">🏹 <b>${stats.shots}×</b></span>`);
+  if (stats.ramp) chips.push(`<span class="stat">🔥 až <b>${cz(stats.rampMax)}×</b></span>`);
   const syn = SYNERGIES.filter((s) => s.tower === tower.type && (!s.with || game.towers.some((t) => t.type === s.with)));
   for (const s of syn) chips.push(`<span class="stat syn">✦ ${s.name}</span>`);
   return chips.join("");
 }
 
-function deltaText(tower, nextStats, cur) {
+function deltaText(next, cur) {
+  if (next.income) return `💰 +${cur.income || 0} → +${next.income} / vlna`;
   const a = game.effective(cur);
-  const b = game.effective(nextStats);
+  const b = game.effective(next);
   const bits = [];
   if (Math.round(b.damage) !== Math.round(a.damage)) bits.push(`⚔ ${cz(a.damage)} → ${cz(b.damage)}`);
   if (Math.abs(b.fireRate - a.fireRate) > 0.04) bits.push(`⏱ ${cz(a.fireRate)} → ${cz(b.fireRate)}`);
-  if (Math.round(nextStats.range) - Math.round(cur.range) >= 4) bits.push(`◎ +${Math.round(nextStats.range - cur.range)}`);
+  if (Math.round(next.range) - Math.round(cur.range) >= 4) bits.push(`◎ +${Math.round(next.range - cur.range)}`);
   return bits.slice(0, 2).join(" · ");
+}
+
+function lockText(type) {
+  const u = CONFIG.towers[type].unlock;
+  if (u.meta) return "ve stromu";
+  if (u.stage) return `stezka ${u.stage}`;
+  return "";
 }
 
 function renderSheet() {
@@ -590,11 +715,13 @@ function renderSheet() {
     return;
   }
   if (sellArm && performance.now() > sellArm) sellArm = 0;
-  const key = [tower.id, tower.level, tower.branch, tower.target || "first", sellArm ? 1 : 0, game.bonuses.damage, game.runBuff.damage, game.runBuff.fireRate, game.towers.length].join("|");
+  const key = [tower.id, tower.type, tower.level, tower.branch, tower.target || "first", sellArm ? 1 : 0, game.bonuses.damage, game.runBuff.damage, game.runBuff.fireRate, game.towers.length, game.priceCut()].join("|");
   if (key !== sheetKey) {
     sheetKey = key;
     sheet.innerHTML = sheetHtml(tower);
-    drawTowerIcon(sheet.querySelector("canvas"), tower.type, tower.level, tower.branch || 0);
+    sheet.querySelectorAll("canvas[data-icon]").forEach((cv) => {
+      drawTowerIcon(cv, cv.dataset.icon, Number(cv.dataset.level || 1), Number(cv.dataset.branch || 0));
+    });
   }
   sheet.classList.remove("hidden");
   sheet.querySelectorAll("[data-cost]").forEach((btn) => {
@@ -603,38 +730,60 @@ function renderSheet() {
 }
 
 function sheetHtml(tower) {
-  const cfg = CONFIG.towers[tower.type];
-  const max = game.maxLevel(tower.type);
+  const cfg = towerCfg(tower.type);
+  const max = tower.type === "base" ? 3 : 7;
   const stats = game.statsFor(tower);
   const target = (TARGET_MODES.find((m) => m.id === (tower.target || "first")) || TARGET_MODES[0]).name;
-  const pathName = tower.level > cfg.levels.length ? ` · <em>${cfg.paths[tower.branch || 0].name}</em>` : "";
-  const refund = sellValue(tower.spent);
-  const sellBtn = (cls) => `<button type="button" class="btn btn-ghost sell ${cls || ""}${sellArm ? " is-armed" : ""}" data-sell>${sellArm ? "Opravdu?" : "Prodat"}<small>+${refund}</small></button>`;
+  const pathName = tower.level >= 6 ? ` · <em>${cfg.paths[tower.branch || 0].name}</em>` : "";
+  const refund = sellValue(tower.spent, game.bonuses.sellBonus);
+  const sellBtn = `<button type="button" class="btn btn-ghost sell${sellArm ? " is-armed" : ""}" data-sell>${sellArm ? "Opravdu?" : "Prodat"}<small>+${refund}</small></button>`;
+  const targetBtn = tower.type === "bank" ? "" : `<button type="button" class="btn btn-ghost btn-target" data-target>Cíl: ${target}</button>`;
   let actions;
-  if (tower.level === cfg.levels.length) {
-    actions = `<div class="path-row">${cfg.paths.map((p, i) => {
-      const cost = game.upgradeCost(tower, i);
-      return `<button type="button" class="btn up path" style="--pc:${PATH_COLORS[i]}" data-up="${i}" data-cost="${cost}">
-        <b>${p.name}<span class="price"><i class="coin"></i>${cost}</span></b><span>${p.desc}</span></button>`;
-    }).join("")}${sellBtn()}</div>`;
+  let showStats = true;
+  if (tower.type === "base" && tower.level >= 3) {
+    showStats = false;
+    const specs = TOWER_ORDER.map((type) => {
+      const sc = CONFIG.towers[type];
+      const open = game.unlocked(type);
+      const cost = game.upgradeCost(tower, type);
+      return `<button type="button" class="spec${open ? "" : " is-locked"}" style="--c:${sc.color}" data-spec="${type}" ${open ? `data-cost="${cost}"` : ""}>
+        <canvas data-icon="${type}" data-level="4"></canvas>
+        <b>${sc.name}</b>
+        <small>${open ? `<i class="coin"></i>${cost}` : "🔒 " + lockText(type)}</small>
+      </button>`;
+    }).join("");
+    actions = `<div class="spec-grid">${specs}</div>`;
+  } else if (tower.type !== "base" && tower.level === 5) {
+    if (game.bonuses.mastery[tower.type]) {
+      actions = `<div class="path-row">${cfg.paths.map((p, i) => {
+        const cost = game.upgradeCost(tower, i);
+        return `<button type="button" class="btn up path" style="--pc:${PATH_COLORS[i]}" data-up="${i}" data-cost="${cost}">
+          <b>${p.name}<span class="price"><i class="coin"></i>${cost}</span></b><span>${p.desc}</span></button>`;
+      }).join("")}${sellBtn}</div>`;
+    } else {
+      actions = `<div class="sheet-actions single"><button type="button" class="btn up btn-ghost" disabled><b>Mistrovství zamčeno</b><span>Odemkni „Mistrovství: ${cfg.name}“ ve stromu (Věže)</span></button>${sellBtn}</div>`;
+    }
   } else if (tower.level >= max) {
-    actions = `<div class="sheet-actions single"><button type="button" class="btn up btn-ghost" disabled><b>Mistrovská úroveň ✓</b><span>${cfg.paths[tower.branch || 0].desc}</span></button>${sellBtn()}</div>`;
+    actions = `<div class="sheet-actions single"><button type="button" class="btn up btn-ghost" disabled><b>Mistrovská úroveň ✓</b><span>${cfg.paths[tower.branch || 0].desc}</span></button>${sellBtn}</div>`;
   } else {
-    const cost = game.upgradeCost(tower);
+    const cost = game.upgradeCost(tower, 0);
     const next = game.statsFor(tower, tower.level + 1);
-    const label = tower.level + 1 === max ? "Mistrovská" : `Úroveň ${tower.level + 1}`;
-    const sub = deltaText(tower, next, stats) || (tower.level >= cfg.levels.length ? cfg.paths[tower.branch || 0].desc : "Silnější věž");
+    const label = tower.type === "base" ? `Úroveň ${tower.level + 1}` : tower.level === 6 ? "Mistrovská úroveň" : `Úroveň ${tower.level + 1}`;
+    const extra = tower.type === "base" && tower.level === 2 ? " · pak specializace" : "";
+    const sub = (deltaText(next, stats) || "Silnější věž") + extra;
     actions = `<div class="sheet-actions single">
       <button type="button" class="btn btn-gold up" data-up="0" data-cost="${cost}"><b>${label}<span class="price"><i class="coin"></i>${cost}</span></b><span>${sub}</span></button>
-      ${sellBtn()}</div>`;
+      ${sellBtn}</div>`;
   }
+  const role = tower.type === "base" ? (showStats ? `Úroveň ${tower.level}/3 · neutrální` : "Vyber specializaci ↓") : `Úroveň ${tower.level}/${game.maxLevel(tower)}${pathName}`;
+  const headBtn = showStats ? targetBtn : sellBtn.replace('class="btn btn-ghost sell', 'class="btn btn-ghost sell sell-sm');
   return `<div class="sheet-head">
-      <canvas width="40" height="40"></canvas>
-      <div class="sheet-title"><b>${cfg.name}</b><small>Úroveň ${tower.level}/${max}${pathName}</small></div>
-      <button type="button" class="btn btn-ghost btn-target" data-target>Cíl: ${target}</button>
+      <canvas data-icon="${tower.type}" data-level="${tower.level}" data-branch="${tower.branch || 0}"></canvas>
+      <div class="sheet-title"><b>${cfg.name}</b><small>${role}</small></div>
+      ${headBtn}
       <button type="button" class="ibtn" data-close aria-label="Zavřít">✕</button>
     </div>
-    <div class="stats">${statChips(tower, stats)}</div>
+    ${showStats ? `<div class="stats">${statChips(tower, stats)}</div>` : ""}
     ${actions}`;
 }
 
@@ -649,35 +798,37 @@ function syncAbilities() {
   if (key !== abilityKey) {
     abilityKey = key;
     const bits = [];
-    if (have.meteor) bits.push(`<button type="button" class="abtn" data-ability="meteor" aria-label="Meteorít">☄<span class="cd hidden"></span></button>`);
+    if (have.meteor) bits.push(`<button type="button" class="abtn" data-ability="meteor" aria-label="Meteorický déšť">☄<span class="cd hidden"></span></button>`);
     if (have.freeze) bits.push(`<button type="button" class="abtn frz" data-ability="freeze" aria-label="Zmrazení času">❄<span class="cd hidden"></span></button>`);
     bar.innerHTML = bits.join("");
   }
   bar.querySelectorAll("[data-ability]").forEach((btn) => {
     const id = btn.dataset.ability;
     const cd = game.abilityCd[id] || 0;
+    const max = game.abilityMax[id] || 1;
     const cdEl = btn.querySelector(".cd");
-    cdEl.classList.toggle("hidden", cd <= 0.05);
-    if (cd > 0.05) setText(cdEl, String(Math.ceil(cd)));
-    btn.classList.toggle("is-on", id === "meteor" && game.aimMeteor);
+    const active = id === "freeze" && game.freezeT > 0;
+    cdEl.classList.toggle("hidden", cd <= 0.05 && !active);
+    if (active) setText(cdEl, game.freezeT.toFixed(1).replace(".", ","));
+    else if (cd > 0.05) setText(cdEl, String(Math.ceil(cd)));
+    btn.classList.toggle("is-active", active);
+    btn.classList.toggle("is-ready", cd <= 0.05);
+    btn.style.setProperty("--cdp", `${Math.round((cd / max) * 100)}%`);
   });
 }
 
-function onAbility(id) {
-  if (game.mode !== "play" || game.paused) return;
+function onAbility(id, btn) {
+  if (game.mode !== "play" || game.halted) return;
   if (id === "meteor") {
-    if (game.abilityCd.meteor > 0) {
+    if (!game.castMeteor()) {
       audio.play("deny");
-      return;
+      shake(btn);
     }
-    game.aimMeteor = !game.aimMeteor;
-    game.selected = null;
-    game.armed = null;
-    game.toastMsg(game.aimMeteor ? "Klepni, kam má meteor spadnout" : "Meteor zrušen");
-    audio.play("ui");
   } else if (id === "freeze") {
-    if (game.abilityCd.freeze > 0) audio.play("deny");
-    else game.castFreeze();
+    if (!game.castFreeze()) {
+      audio.play("deny");
+      shake(btn);
+    }
   }
 }
 
@@ -687,14 +838,14 @@ function enemiesLeft() {
 
 function syncHud() {
   setText($("hud-lives-val"), String(Math.max(0, game.lives | 0)));
-  setText($("hud-coins-val"), String(game.coins | 0));
+  setText($("hud-coins-val"), fmt(game.coins | 0));
   $("hud-coins").classList.toggle("pop", game.coinPulse > 0.45);
   const preparing = game.phase !== "combat";
-  const shown = preparing ? game.wave + 1 : Math.max(1, game.wave);
-  setText($("hud-wave-val"), "Vlna " + shown);
+  const shown = Math.min(CONFIG.stageWaves, preparing ? game.wave + 1 : Math.max(1, game.wave));
+  setText($("hud-wave-val"), `Vlna ${shown}/${CONFIG.stageWaves}`);
   const toBoss = (5 - (shown % 5)) % 5;
-  setText($("hud-wave-sub"), toBoss === 0 ? "☠ boss" : `boss za ${toBoss}`);
-  setText($("btn-speed"), game.speed === 1 ? "1×" : "2×");
+  setText($("hud-wave-sub"), shown >= CONFIG.stageWaves ? "👑 Vládce noci" : toBoss === 0 ? "☠ boss" : `S${game.stage} · boss za ${toBoss}`);
+  setText($("btn-speed"), game.speed + "×");
   $("btn-speed").classList.toggle("is-on", game.speed !== 1);
 
   const boss = game.bossEnemy();
@@ -703,7 +854,7 @@ function syncHud() {
     bar.classList.remove("hidden");
     $("boss-fill").style.width = `${Math.max(0, boss.hp / boss.maxHp) * 100}%`;
     setText($("boss-name"), boss.name || "Boss");
-    setText($("boss-hp"), `${Math.ceil(boss.hp)} / ${boss.maxHp}`);
+    setText($("boss-hp"), `${fmt(Math.ceil(boss.hp))} / ${fmt(boss.maxHp)}`);
   } else bar.classList.add("hidden");
 
   const banner = $("banner");
@@ -732,24 +883,24 @@ function syncHud() {
   } else next.classList.add("hidden");
 
   let status;
-  if (game.aimMeteor) status = "<b>Meteorít:</b> klepni na stezku";
-  else if (game.armed) status = `Stavíš <b>${CONFIG.towers[game.armed].name}</b> — klepni na zářící kámen`;
-  else if (game.selected && game.selected.kind === "slot") status = "<b>Vyber věž</b> pro označený kámen";
+  if (game.armed) status = `Stavíš <b>věže</b> — klepej na zářící kameny`;
+  else if (game.selected && game.selected.kind === "slot") status = "Kámen vybrán — <b>postav věž</b> dole";
+  else if (game.freezeT > 0) status = `❄ <b>Čas zamrzl</b> · ${game.freezeT.toFixed(1).replace(".", ",")} s`;
   else if (game.phase === "gap") status = `Příprava · vlna ${game.wave + 1} za <b>${Math.max(0, Math.ceil(game.gapLeft))} s</b>`;
   else if (game.phase === "combat") status = `Vlna ${game.wave} · zbývá <b>${enemiesLeft()}</b> stínů`;
   else status = "Vyber kartu";
-  const tip = game.mode === "play" && HINTS[game.hint] && !save.tutorialDone && !game.armed && !game.aimMeteor && !(game.selected && game.selected.kind === "slot");
+  const tip = game.mode === "play" && HINTS[game.hint] && !save.tutorialDone && !game.armed && !(game.selected && game.selected.kind === "slot");
   if (tip) status = "💡 " + HINTS[game.hint];
   const st = $("dock-status");
   st.classList.toggle("tip", !!tip);
   setHtml(st, status);
 }
 
-/* ================= cards overlay ================= */
+/* ================= overlays ================= */
 
 function syncBless() {
   const layer = $("bless-layer");
-  if (game.mode === "play" && game.phase === "bless" && game.blessOffer.length) {
+  if (game.mode === "play" && game.phase === "bless" && game.blessOffer.length && !game.intro) {
     const key = game.blessOffer.map((item) => item.id).join("-") + ":" + game.rerollsLeft;
     if (layer.dataset.key !== key) {
       layer.dataset.key = key;
@@ -771,8 +922,33 @@ function syncBless() {
   }
 }
 
-function syncTutorial() {
-  /* Tip se ukazuje ve spodní liště (syncHud), aby nezakrýval hrací plochu. */
+function syncIntro() {
+  const layer = $("intro-layer");
+  const type = game.mode === "play" ? game.intro : null;
+  if (!type) {
+    if (!layer.classList.contains("hidden")) layer.classList.add("hidden");
+    layer.dataset.type = "";
+    return;
+  }
+  if (layer.dataset.type !== type) {
+    layer.dataset.type = type;
+    const info = ENEMY_INFO[type] || { text: "", strong: "", weak: "" };
+    const proto = CONFIG.enemies[type] || {};
+    setText($("intro-name"), proto.name || type);
+    setText($("intro-text"), info.text);
+    setText($("intro-weak"), info.weak);
+    setText($("intro-strong"), info.strong);
+    layer.classList.remove("hidden");
+    drawEnemyIcon($("intro-icon"), type);
+  }
+}
+
+function dismissIntro() {
+  if (!game.intro) return;
+  game.intro = null;
+  $("intro-layer").classList.add("hidden");
+  $("intro-layer").dataset.type = "";
+  audio.play("ui");
 }
 
 /* ================= run end ================= */
@@ -782,34 +958,56 @@ function animateNumber(el, target) {
   function step(now) {
     const k = Math.min(1, (now - t0) / 800);
     const eased = 1 - (1 - k) ** 3;
-    el.textContent = "+" + Math.round(target * eased);
+    el.textContent = "+" + fmt(Math.round(target * eased));
     if (k < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
 }
 
 function onRunEnd(result) {
-  const record = result.wave > save.bestWave && result.wave > 0;
+  const stage = result.stage || game.stage;
+  const prevBest = save.bestByStage[stage] || 0;
+  const record = result.wave > prevBest && result.wave > 0 && !result.victory;
   save.crystals += result.crystals;
-  save.bestByMap = save.bestByMap || { les: 0, had: 0, propast: 0 };
-  const mapKey = result.mapId || save.mapId || "les";
-  save.bestByMap[mapKey] = Math.max(save.bestByMap[mapKey] || 0, result.wave);
+  save.bestByStage[stage] = Math.max(prevBest, result.victory ? CONFIG.stageWaves : result.wave);
   save.bestWave = Math.max(save.bestWave, result.wave);
   save.runs += 1;
   save.kills += result.kills;
   save.bossKills = (save.bossKills || 0) + result.bossKills;
+  let unlockedNew = false;
+  if (result.victory) {
+    save.victories = (save.victories || 0) + 1;
+    if (stage > save.cleared) {
+      save.cleared = stage;
+      unlockedNew = true;
+    }
+    save.stage = Math.min(save.cleared + 1, stage + 1);
+  }
   grantAchievements();
   writeSave(save);
+  game.setOwned(save.owned, save.cleared);
   window.__lastResult = { ...result, record, totalCrystals: save.crystals };
 
   $("pause-layer").classList.add("hidden");
   $("bless-layer").classList.add("hidden");
-  setText($("sum-title"), result.died ? "Krystal pohasl" : "Tažení přerušeno");
-  setText($("sum-wave"), String(result.wave));
+  $("intro-layer").classList.add("hidden");
+  const title = result.victory ? `Stezka ${stage} dobyta!` : result.died ? "Krystal pohasl" : "Tažení přerušeno";
+  setText($("sum-title"), title);
+  const unlock = $("sum-unlock");
+  if (result.victory) {
+    unlock.innerHTML = unlockedNew ? `Odemčeno: <b>${stageReward(stage)}</b>` : "Stezka znovu ubráněna";
+    unlock.classList.remove("hidden");
+  } else unlock.classList.add("hidden");
+  setText($("sum-wave"), `${result.wave}/${CONFIG.stageWaves}`);
   setText($("sum-kills"), String(result.kills));
   setText($("sum-boss"), String(result.bossKills));
-  setText($("sum-best"), String(save.bestWave));
+  setText($("sum-best"), String(save.bestByStage[stage] || 0));
   $("sum-record").classList.toggle("hidden", !record);
+  $("btn-next-stage").classList.toggle("hidden", !result.victory);
+  setText($("btn-next-stage"), `Na stezku ${stage + 1} ›`);
+  $("btn-again").classList.toggle("btn-gold", !result.victory);
+  $("btn-again").classList.toggle("btn-ghost", !!result.victory);
+  setText($("btn-again"), result.victory ? "Hrát tuhle znovu" : "Hrát znovu");
   $("sum-goal").innerHTML = goalHtml();
   refreshBadges();
   $("summary-layer").classList.remove("hidden");
@@ -837,7 +1035,7 @@ function closePause() {
 
 /* ================= input ================= */
 
-let CARDS_BY_ID = {};
+const CARDS_BY_ID = Object.fromEntries(CARDS.map((c) => [c.id, c]));
 
 function bind() {
   const on = (id, fn) => $(id).addEventListener("click", (event) => {
@@ -845,9 +1043,33 @@ function bind() {
     fn(event);
   });
 
-  on("btn-play", startRun);
-  on("btn-tree-play", startRun);
-  on("btn-again", startRun);
+  on("btn-play", () => startRun(save.stage));
+  on("btn-tree-play", () => startRun(save.stage));
+  on("btn-again", () => startRun(game.stage));
+  on("btn-next-stage", () => startRun(Math.min(save.cleared + 1, game.stage + 1)));
+  on("btn-campaign", () => { audio.play("ui"); showCampaign(); });
+  on("menu-stage", () => { audio.play("ui"); showCampaign(); });
+  on("btn-campaign-back", showMenu);
+  on("btn-campaign-play", () => {
+    if (stageStatus(campaignSel) === "locked") return;
+    startRun(campaignSel);
+  });
+  $("campaign-list").addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-stage]");
+    if (!btn) return;
+    const n = Number(btn.dataset.stage);
+    if (stageStatus(n) === "locked") {
+      audio.play("deny");
+      shake(btn);
+      return;
+    }
+    campaignSel = n;
+    save.stage = n;
+    writeSave(save);
+    audio.play("ui");
+    $("campaign-list").querySelectorAll(".cnode").forEach((el) => el.classList.toggle("is-sel", Number(el.dataset.stage) === n));
+    syncCampaignFoot();
+  });
   on("btn-tree", () => { audio.play("ui"); showTree(); });
   on("btn-sum-tree", () => { audio.play("ui"); $("summary-layer").classList.add("hidden"); showTree(); });
   on("btn-sum-menu", () => { audio.play("ui"); showMenu(); });
@@ -883,7 +1105,7 @@ function bind() {
     save = defaultSave();
     save.sound = sound;
     writeSave(save);
-    game.setOwned({});
+    game.setOwned({}, 0);
     audio.play("ui");
     showMenu();
   });
@@ -897,6 +1119,14 @@ function bind() {
   on("btn-surrender", () => { audio.play("ui"); closePause(); game.surrender(); });
   on("btn-next", () => game.callWave());
   on("btn-reroll", () => game.rerollCards());
+  on("btn-intro-ok", (event) => { event.stopPropagation(); dismissIntro(); });
+  $("intro-layer").addEventListener("click", () => dismissIntro());
+  on("btn-notice-ok", () => {
+    $("notice-layer").classList.add("hidden");
+    save.migrationRefund = 0;
+    writeSave(save);
+    audio.play("ui");
+  });
   on("btn-fs-ok", () => {
     $("fs-layer").classList.add("hidden");
     if (game.mode === "play" && $("pause-layer").classList.contains("hidden")) game.setPaused(false);
@@ -904,22 +1134,6 @@ function bind() {
   document.querySelectorAll("[data-fs]").forEach((btn) => btn.addEventListener("click", toggleFullscreen));
   document.addEventListener("fullscreenchange", () => { syncFsButtons(); setTimeout(layout, 60); });
   document.addEventListener("webkitfullscreenchange", () => { syncFsButtons(); setTimeout(layout, 60); });
-
-  $("map-picker").addEventListener("click", (event) => {
-    const btn = event.target.closest("[data-map]");
-    if (!btn) return;
-    const map = mapById(btn.dataset.map);
-    if (save.bestWave < map.unlockWave) {
-      audio.play("deny");
-      shake(btn);
-      return;
-    }
-    save.mapId = map.id;
-    writeSave(save);
-    game.setMap(map.id);
-    audio.play("ui");
-    renderMaps();
-  });
 
   $("tree-tabs").addEventListener("click", (event) => {
     const btn = event.target.closest("[data-tab]");
@@ -952,9 +1166,21 @@ function bind() {
       return;
     }
     const build = t.closest("[data-build]");
-    if (build) return onCard(build.dataset.build, build);
+    if (build) return onBuild(build);
+    if (t.closest("[data-specs]")) {
+      const names = specsUnlocked().map((x) => CONFIG.towers[x].name).join(", ");
+      game.toastMsg("Máš: " + names);
+      audio.play("ui");
+      return;
+    }
     const ability = t.closest("[data-ability]");
-    if (ability) return onAbility(ability.dataset.ability);
+    if (ability) return onAbility(ability.dataset.ability, ability);
+    const spec = t.closest("[data-spec]");
+    if (spec) {
+      if (!game.upgrade(spec.dataset.spec)) shake(spec);
+      sheetKey = "";
+      return;
+    }
     const up = t.closest("[data-up]");
     if (up) {
       if (!game.upgrade(Number(up.dataset.up))) shake(up);
@@ -977,6 +1203,7 @@ function bind() {
       if (!tower) return;
       const order = TARGET_MODES.map((m) => m.id);
       tower.target = order[(order.indexOf(tower.target || "first") + 1) % order.length];
+      sheetKey = "";
       audio.play("ui");
       return;
     }
@@ -987,7 +1214,7 @@ function bind() {
   });
 
   canvas.addEventListener("pointerdown", (event) => {
-    if (!event.isPrimary || game.mode !== "play" || game.paused || game.phase === "bless") return;
+    if (!event.isPrimary || game.mode !== "play" || game.halted) return;
     event.preventDefault();
     audio.unlock();
     const p = toWorld(event.clientX, event.clientY);
@@ -1000,13 +1227,17 @@ function bind() {
 
   document.addEventListener("keydown", (event) => {
     if (event.repeat) return;
+    if (game.intro && (event.key === " " || event.key === "Enter" || event.key === "Escape")) {
+      event.preventDefault();
+      dismissIntro();
+      return;
+    }
     if (event.key === " " || event.key === "Escape") {
       if (game.mode !== "play") return;
       event.preventDefault();
       if (game.paused) closePause();
       else openPause();
-    } else if (event.key === "1") game.speed = 1;
-    else if (event.key === "2" && game.mode === "play") game.speed = 2;
+    } else if (["1", "2", "3", "4"].includes(event.key) && game.mode === "play") game.speed = Number(event.key);
     else if (event.key === "f") toggleFullscreen();
   });
 
@@ -1024,7 +1255,7 @@ function bind() {
   document.addEventListener("contextmenu", (event) => event.preventDefault());
   document.addEventListener("selectstart", (event) => event.preventDefault());
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden && game.mode === "play" && !game.paused && game.phase !== "bless") openPause();
+    if (document.hidden && game.mode === "play" && !game.halted) openPause();
   });
 }
 
@@ -1037,14 +1268,17 @@ const STEP = 1 / 60;
 function frame(ts) {
   const raw = last ? Math.min(0.1, (ts - last) / 1000) : 0;
   last = ts;
-  if (game.mode === "play" && !game.paused) {
+  if (game.mode === "play" && !game.halted) {
     const timeScale = game.slowMo > 0 ? 0.35 : 1;
     acc += raw * game.speed * timeScale;
-    if (acc > 0.12) acc = 0.12;
+    // Pevný krok 1/60 s: i při 4× se simulace počítá ve stejných malých krocích.
+    const cap = 0.1 * game.speed + STEP;
+    if (acc > cap) acc = cap;
     let guard = 0;
-    while (acc >= STEP && guard++ < 8) {
+    while (acc >= STEP && guard++ < 40) {
       game.tick(STEP);
       acc -= STEP;
+      if (game.halted || game.mode !== "play") break;
     }
   } else if (game.mode === "summary") {
     game.tick(Math.min(0.05, raw));
@@ -1057,17 +1291,14 @@ function frame(ts) {
     if (game.mode === "play") {
       buildStrip();
       syncHud();
-      syncStrip();
       renderSheet();
       syncAbilities();
     }
-    syncTutorial();
+    syncIntro();
     syncBless();
   }
   requestAnimationFrame(frame);
 }
-
-CARDS_BY_ID = Object.fromEntries(CARDS.map((c) => [c.id, c]));
 
 bind();
 refreshSoundLabels();
@@ -1085,5 +1316,5 @@ try {
   /* file:// or sandboxed iframe */
 }
 
-window.__ui = { layout, view, toggleFullscreen };
+window.__ui = { layout, view, toggleFullscreen, save: () => save };
 requestAnimationFrame(frame);
