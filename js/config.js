@@ -31,10 +31,10 @@ export const CONFIG = {
 
   /** Životy nepřátel: vlna w na stezce s. */
   hpPower: 1.075,
-  hpScale: 1.9,
+  hpScale: 1.8,
   lateWave: 10,
   latePower: 1.16,
-  stageHp: 1.6,
+  stageHp: 1.45,
   stageArmor: 0.025,
   speedGrowth: 0.012,
   rewardGrowth: 0.03,
@@ -46,8 +46,8 @@ export const CONFIG = {
     cost: 40,
     upgrades: [30, 45],
     levels: [
-      { damage: 6, fireRate: 1.25, range: 118, projectileSpeed: 420 },
-      { damage: 9, fireRate: 1.35, range: 126, projectileSpeed: 440 },
+      { damage: 5, fireRate: 1.25, range: 118, projectileSpeed: 420 },
+      { damage: 8, fireRate: 1.35, range: 126, projectileSpeed: 440 },
       { damage: 13, fireRate: 1.45, range: 134, projectileSpeed: 460 },
     ],
   },
@@ -405,11 +405,11 @@ export function stageReward(stage) {
 /* ===================== vlny ===================== */
 
 /** Násobek životů pro stezku (laděno simulací: plný strom N-1 projde stezku N). */
-export const STAGE_HP = [1, 4.1, 13.4, 23.8, 63, 70, 200, 500, 520, 890];
+export const STAGE_HP = [1, 3.6, 14.1, 25.1, 66.5, 74, 211, 528, 549, 939];
 export function stageHpMult(stage) {
   const n = Math.max(1, stage || 1);
   if (n <= STAGE_HP.length) return STAGE_HP[n - 1];
-  return STAGE_HP[STAGE_HP.length - 1] * 1.5 * Math.pow(CONFIG.stageHp, n - STAGE_HP.length);
+  return STAGE_HP[STAGE_HP.length - 1] * 1.7 * Math.pow(CONFIG.stageHp, n - STAGE_HP.length);
 }
 
 export function waveHp(wave, stage) {
