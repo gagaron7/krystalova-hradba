@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#120c22">
+  <meta name="theme-color" content="#0c1014">
   <meta name="description" content="Krystalová hradba — noční tower defense. Braň krystalové srdce.">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Hradba">
+  <meta name="format-detection" content="telephone=no">
   <title>Krystalová hradba</title>
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -16,153 +17,184 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <div id="viewport">
-    <div id="stage">
-      <canvas id="view" width="390" height="844"></canvas>
-      <div id="ui">
-        <section id="screen-menu" class="screen active">
-          <div class="menu-top">
-            <div class="logo-gem" aria-hidden="true"></div>
-            <p class="eyebrow">Noční obrana</p>
-            <h1>Krystalová<br>hradba</h1>
-            <p class="tagline">Stíny jdou po stezce. Tvé věže jsou poslední hradba před srdcem krystalu.</p>
-          </div>
-          <div class="menu-bottom">
-            <div class="menu-stats">
-              <div>
-                <b id="menu-best">0</b>
-                <small>nejlepší vlna</small>
-              </div>
-              <div>
-                <b id="menu-crystals">0</b>
-                <small>krystaly</small>
-              </div>
-            </div>
-            <div id="map-picker" class="map-picker"></div>
-            <button id="btn-play" class="btn btn-gold" type="button">Hrát</button>
-            <p id="install-hint" class="install-hint hidden">V menu prohlížeče zvolte Přidat na plochu. Hra pak půjde i offline.</p>
-            <div class="menu-row">
-              <button id="btn-tree" class="btn btn-ghost" type="button">Vylepšení</button>
-              <button id="btn-ach" class="btn btn-ghost" type="button">Úspěchy</button>
-            </div>
-            <button id="btn-settings" class="btn btn-ghost" type="button">Nastavení</button>
-          </div>
-        </section>
-
-        <section id="screen-ach" class="screen">
-          <header class="topbar">
-            <button id="btn-ach-back" class="btn btn-small" type="button">Zpět</button>
-            <h2>Úspěchy</h2>
-          </header>
-          <div id="ach-list" class="tree-scroll scroll"></div>
-        </section>
-
-        <section id="screen-settings" class="screen">
-          <header class="topbar">
-            <button id="btn-settings-back" class="btn btn-small" type="button">Zpět</button>
-            <h2>Nastavení</h2>
-          </header>
-          <div class="sheet scroll">
-            <button id="btn-sound" class="btn btn-ghost wide" type="button" data-sound-label>Zvuk: zapnutý</button>
-            <button id="btn-music" class="btn btn-ghost wide" type="button">Hudba: zapnutá</button>
-            <label class="volume">Hlasitost
-              <input id="volume" type="range" min="0" max="100" value="70">
-            </label>
-            <h3>Jak se hraje</h3>
-            <p class="prose">Klepni na volný kámen u stezky a postav věž. Klepnutím na věž ji vylepšíš nebo prodáš. Mince z poražených stínů přiletí samy, nebo je seber klepnutím. Další vlnu můžeš vyvolat dřív a získat bonus. Když stíny dojdou ke krystalu, ztrácíš životy. Po pádu (i když se vzdáš) dostaneš krystaly na trvalá vylepšení.</p>
-            <button id="btn-reset" class="btn btn-danger wide" type="button">Smazat postup</button>
-          </div>
-          <div id="reset-dialog" class="dialog-card hidden">
-            <p>Smazat všechen postup? Přijdeš o krystaly i vylepšení. Nastavení zvuku zůstane.</p>
-            <div class="menu-row">
-              <button id="btn-reset-no" class="btn btn-ghost" type="button">Zrušit</button>
-              <button id="btn-reset-yes" class="btn btn-danger" type="button">Smazat</button>
-            </div>
-          </div>
-        </section>
-
-        <section id="screen-tree" class="screen">
-          <header class="topbar">
-            <button id="btn-tree-back" class="btn btn-small" type="button">Zpět</button>
-            <div class="crystal-pill"><b id="tree-crystals">0</b> <span id="tree-crystal-word">krystalů</span></div>
-            <button id="btn-tree-play" class="btn btn-small btn-gold" type="button">Hrát</button>
-          </header>
-          <p id="tree-toast" class="toast hidden"></p>
-          <div id="tree-scroll" class="tree-scroll scroll"></div>
-        </section>
-
-        <section id="screen-game" class="screen">
-          <header class="hud">
-            <div class="hud-stat" id="hud-lives">
-              <span class="hud-ico heart">♥</span>
-              <b id="hud-lives-val">0</b>
-            </div>
-            <div class="hud-wave">
-              <small id="hud-wave-label">vlna</small>
-              <b id="hud-wave-val">1</b>
-            </div>
-            <div class="hud-stat" id="hud-coins">
-              <span class="coin-dot" aria-hidden="true"></span>
-              <b id="hud-coins-val">0</b>
-            </div>
-            <button id="btn-speed" class="btn btn-tiny" type="button">1×</button>
-            <button id="btn-pause" class="btn btn-tiny" type="button">Pauza</button>
-          </header>
-          <div id="bossbar" class="bossbar hidden">
-            <div class="bossbar-label"><span id="boss-name">Pán stínů</span><span id="boss-hp"></span></div>
-            <div class="bossbar-track"><div id="boss-fill"></div></div>
-          </div>
-          <div id="banner" class="banner hidden"></div>
-          <div id="tutorial" class="tutorial hidden">
-            <p id="tutorial-text"></p>
-            <button id="tutorial-skip" class="btn btn-small" type="button">Přeskočit</button>
-          </div>
-          <div id="ability-bar" class="ability-bar hidden"></div>
-          <button id="btn-next" class="btn btn-next hidden" type="button">Začít vlnu</button>
-          <footer id="panel" class="panel">
-            <p id="panel-toast" class="toast hidden"></p>
-            <div id="panel-body"></div>
-          </footer>
-        </section>
-
-        <section id="screen-summary" class="screen">
-          <div class="summary-card">
-            <div class="logo-gem small" aria-hidden="true"></div>
-            <h2 id="sum-title">Krystal pohasl</h2>
-            <p id="sum-record" class="record hidden">Nový rekord</p>
-            <dl class="sum-grid">
-              <div><dt>Vlna</dt><dd id="sum-wave">0</dd></div>
-              <div><dt>Zabito</dt><dd id="sum-kills">0</dd></div>
-              <div><dt>Páni stínů</dt><dd id="sum-boss">0</dd></div>
-              <div><dt>Nejlepší</dt><dd id="sum-best">0</dd></div>
-            </dl>
-            <p class="sum-crystal-label">Získané krystaly</p>
-            <p class="sum-crystal" id="sum-crystals">+0</p>
-            <button id="btn-again" class="btn btn-gold" type="button">Hrát znovu</button>
-            <button id="btn-sum-tree" class="btn btn-ghost" type="button">K vylepšením</button>
-            <button id="btn-sum-menu" class="btn btn-ghost" type="button">Menu</button>
-          </div>
-        </section>
-
-        <div id="bless-layer" class="overlay hidden">
-          <div class="dialog-card">
-            <h2>Požehnání</h2>
-            <p class="prose">Jedno platí jen do konce tohoto tažení.</p>
-            <div id="bless-cards" class="bless-cards"></div>
-          </div>
+  <div id="app">
+    <!-- MENU -->
+    <section id="screen-menu" class="screen active">
+      <div class="screen-scroll scroll">
+        <div class="menu-hero">
+          <div class="logo-gem" aria-hidden="true"></div>
+          <p class="eyebrow">Noční tower defense</p>
+          <h1>Krystalová hradba</h1>
         </div>
-        <p id="ach-pop" class="ach-pop hidden"></p>
-        <div id="pause-layer" class="overlay hidden">
-          <div class="dialog-card">
-            <h2>Pauza</h2>
-            <p class="prose">Stezka čeká. Stíny se nehnou, dokud nepokračuješ.</p>
-            <button id="btn-resume" class="btn btn-gold" type="button">Pokračovat</button>
-            <button id="btn-pause-sound" class="btn btn-ghost" type="button" data-sound-label>Zvuk: zapnutý</button>
-            <button id="btn-surrender" class="btn btn-danger" type="button">Vzdát se</button>
+        <div class="chips">
+          <div class="chip"><small>Nejlepší vlna</small><b id="menu-best">0</b></div>
+          <div class="chip chip-cyan"><small>Krystaly</small><b id="menu-crystals">0</b></div>
+        </div>
+        <div id="menu-goal" class="goal"></div>
+        <h3 class="label">Stezka</h3>
+        <div id="map-picker" class="map-picker"></div>
+        <button id="btn-play" class="btn btn-gold btn-big" type="button">Hrát</button>
+        <div class="grid2">
+          <button id="btn-tree" class="btn btn-ghost" type="button">Vylepšení <span id="tree-badge" class="badge hidden">0</span></button>
+          <button id="btn-ach" class="btn btn-ghost" type="button">Úspěchy</button>
+          <button id="btn-settings" class="btn btn-ghost" type="button">Nastavení</button>
+          <button class="btn btn-ghost" type="button" data-fs>⛶ Celá obrazovka</button>
+        </div>
+        <p id="install-hint" class="install-hint hidden">Tip: Sdílet → Přidat na plochu. Hra pak poběží přes celou obrazovku i offline.</p>
+      </div>
+    </section>
+
+    <!-- META TREE -->
+    <section id="screen-tree" class="screen">
+      <header class="topbar">
+        <button id="btn-tree-back" class="btn btn-ghost btn-sm" type="button">‹ Zpět</button>
+        <div class="crystal-pill"><i class="gem-dot"></i><b id="tree-crystals">0</b></div>
+        <button id="btn-tree-play" class="btn btn-gold btn-sm" type="button">Hrát</button>
+      </header>
+      <div id="tree-goal" class="goal goal-pad"></div>
+      <nav id="tree-tabs" class="tabs"></nav>
+      <div id="tree-scroll" class="list scroll"></div>
+      <p id="tree-toast" class="toast hidden"></p>
+    </section>
+
+    <!-- ACHIEVEMENTS -->
+    <section id="screen-ach" class="screen">
+      <header class="topbar">
+        <button id="btn-ach-back" class="btn btn-ghost btn-sm" type="button">‹ Zpět</button>
+        <h2>Úspěchy</h2>
+        <span class="topbar-spacer"></span>
+      </header>
+      <div id="ach-list" class="list scroll"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="screen-settings" class="screen">
+      <header class="topbar">
+        <button id="btn-settings-back" class="btn btn-ghost btn-sm" type="button">‹ Zpět</button>
+        <h2>Nastavení</h2>
+        <span class="topbar-spacer"></span>
+      </header>
+      <div class="list scroll">
+        <button id="btn-sound" class="btn btn-ghost wide" type="button" data-sound-label>Zvuk: zapnutý</button>
+        <button id="btn-music" class="btn btn-ghost wide" type="button">Hudba: zapnutá</button>
+        <label class="volume">Hlasitost
+          <input id="volume" type="range" min="0" max="100" value="70">
+        </label>
+        <button class="btn btn-ghost wide" type="button" data-fs>⛶ Celá obrazovka</button>
+        <h3 class="label">Jak se hraje</h3>
+        <div class="prose">
+          <p>Klepni na kamenný kruh u stezky a vyber věž dole. Nebo nejdřív klepni na věž dole a pak na kámen.</p>
+          <p>Klepnutím na věž ji vylepšíš. Na 3. úrovni si vybereš jednu ze dvou specializací.</p>
+          <p>Po vlnách 3, 5, 8, 10… si vybereš kartu. Po každém pádu získáš krystaly na trvalá vylepšení.</p>
+          <p><b>Souhry:</b> Bouře a Střelec dávají víc zpomaleným stínům, Dělo víc otráveným, Ostrostřelec prostřelí štíty.</p>
+        </div>
+        <button id="btn-reset" class="btn btn-danger wide" type="button">Smazat postup</button>
+        <div id="reset-dialog" class="card-box hidden">
+          <p>Smazat všechen postup? Přijdeš o krystaly i vylepšení.</p>
+          <div class="grid2">
+            <button id="btn-reset-no" class="btn btn-ghost" type="button">Zrušit</button>
+            <button id="btn-reset-yes" class="btn btn-danger" type="button">Smazat</button>
           </div>
         </div>
       </div>
+    </section>
+
+    <!-- GAME -->
+    <section id="screen-game" class="screen">
+      <header class="hud">
+        <div class="hud-stat" id="hud-lives"><span class="heart">♥</span><b id="hud-lives-val">0</b></div>
+        <div class="hud-stat" id="hud-coins"><i class="coin"></i><b id="hud-coins-val">0</b></div>
+        <div class="hud-wave"><b id="hud-wave-val">Vlna 1</b><small id="hud-wave-sub"></small></div>
+        <div class="hud-btns">
+          <button id="btn-speed" class="ibtn" type="button" aria-label="Rychlost">1×</button>
+          <button id="btn-pause" class="ibtn" type="button" aria-label="Pauza">❚❚</button>
+          <button id="btn-fs-hud" class="ibtn" type="button" aria-label="Celá obrazovka" data-fs>⛶</button>
+        </div>
+      </header>
+      <div id="board" class="board">
+        <canvas id="view"></canvas>
+        <div id="bossbar" class="bossbar hidden">
+          <div class="bossbar-label"><span id="boss-name">Pán stínů</span><span id="boss-hp"></span></div>
+          <div class="bossbar-track"><div id="boss-fill"></div></div>
+        </div>
+        <div id="tutorial" class="tutorial hidden">
+          <p id="tutorial-text"></p>
+          <button id="tutorial-skip" class="btn btn-ghost btn-sm" type="button">Přeskočit</button>
+        </div>
+        <div id="banner" class="banner hidden"></div>
+        <p id="panel-toast" class="toast board-toast hidden"></p>
+      </div>
+      <footer id="dock" class="dock">
+        <div class="dock-head">
+          <p id="dock-status" class="dock-status"></p>
+          <div id="ability-bar" class="ability-bar"></div>
+          <button id="btn-next" class="btn btn-gold btn-next hidden" type="button">Další vlna</button>
+        </div>
+        <div id="strip" class="strip scroll-x" role="list"></div>
+        <div id="sheet" class="sheet hidden"></div>
+      </footer>
+    </section>
+
+    <!-- OVERLAYS -->
+    <div id="bless-layer" class="overlay hidden">
+      <div class="dialog">
+        <p class="eyebrow" id="bless-eyebrow">Odměna</p>
+        <h2>Vyber kartu</h2>
+        <div id="bless-cards" class="bless-cards"></div>
+        <button id="btn-reroll" class="btn btn-ghost hidden" type="button">Přehodit</button>
+      </div>
     </div>
+
+    <div id="pause-layer" class="overlay hidden">
+      <div class="dialog">
+        <h2>Pauza</h2>
+        <div id="pause-cards" class="pause-cards"></div>
+        <button id="btn-resume" class="btn btn-gold btn-big" type="button">Pokračovat</button>
+        <div class="grid2">
+          <button id="btn-pause-sound" class="btn btn-ghost" type="button" data-sound-label>Zvuk: zapnutý</button>
+          <button class="btn btn-ghost" type="button" data-fs>⛶ Celá obr.</button>
+        </div>
+        <button id="btn-surrender" class="btn btn-danger btn-sep" type="button">Vzdát se</button>
+      </div>
+    </div>
+
+    <div id="summary-layer" class="overlay hidden">
+      <div class="dialog">
+        <div class="logo-gem small" aria-hidden="true"></div>
+        <h2 id="sum-title">Krystal pohasl</h2>
+        <p id="sum-record" class="record hidden">Nový rekord!</p>
+        <dl class="sum-grid">
+          <div><dt>Vlna</dt><dd id="sum-wave">0</dd></div>
+          <div><dt>Zabito</dt><dd id="sum-kills">0</dd></div>
+          <div><dt>Bossové</dt><dd id="sum-boss">0</dd></div>
+          <div><dt>Nejlepší</dt><dd id="sum-best">0</dd></div>
+        </dl>
+        <p class="sum-crystal-label">Získané krystaly</p>
+        <p class="sum-crystal" id="sum-crystals">+0</p>
+        <div id="sum-goal" class="goal"></div>
+        <button id="btn-again" class="btn btn-gold btn-big" type="button">Hrát znovu</button>
+        <div class="grid2">
+          <button id="btn-sum-tree" class="btn btn-ghost" type="button">Vylepšení <span id="sum-badge" class="badge hidden">0</span></button>
+          <button id="btn-sum-menu" class="btn btn-ghost" type="button">Menu</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="fs-layer" class="overlay hidden">
+      <div class="dialog">
+        <h2>Celá obrazovka na iPhonu</h2>
+        <p class="prose">Safari na iPhonu neumí přepnout stránku na celou obrazovku tlačítkem. Jde to ale takhle:</p>
+        <ol class="steps">
+          <li>Klepni na <b>Sdílet</b> (čtvereček se šipkou nahoru).</li>
+          <li>Zvol <b>Přidat na plochu</b>.</li>
+          <li>Spusť <b>Hradbu</b> z ikony na ploše. Poběží bez lišt přes celý displej a i offline.</li>
+        </ol>
+        <p class="prose small">Hned teď pomůže i <b>aA</b> v adresním řádku → <b>Skrýt panel nástrojů</b>.</p>
+        <button id="btn-fs-ok" class="btn btn-gold" type="button">Rozumím</button>
+      </div>
+    </div>
+
+    <p id="ach-pop" class="ach-pop hidden"></p>
   </div>
   <script type="module" src="js/main.js"></script>
 </body>

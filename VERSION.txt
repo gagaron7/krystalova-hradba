@@ -1,8 +1,7 @@
-commit: ed414fcca383c1e54cc77525f13b073c5ac53a85
-čas: 2026-11-23 20:30 CET
-cache: hradba-v6
+verze: 2.0 (cache hradba-v7)
+čas: 2026-11-24 18:12 CET
 
-Jedna souborová verze krystalova-hradba.html jede i z disku a v iframe.
-První vlny sypou mince rychleji a po stezce jde truhla s bonusovými krystaly.
-Prodej věže funguje během vlny, schopnosti v pauze čekají a dvojnásobná rychlost se po záseku nerozjede donekonečna.
-Cache service workeru je hradba-v6.
+Nové rozhraní: horní lišta, hrací plocha, spodní dok se všemi 6 věžemi (mřížka 3×2) a panel věže.
+Celá obrazovka (Fullscreen API, na iPhonu návod Přidat na plochu), 100dvh + safe-area.
+Specializace věží na 3. úrovni (2 cesty, úrovně 4–5), souhry věží, karty po vlnách 3/5/8/10…,
+nová větev stromu Taktika a karty, cíl Další vylepšení v menu i po hře.

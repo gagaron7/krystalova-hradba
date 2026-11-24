@@ -1,4 +1,4 @@
-import { BLESSINGS, CONFIG, computeBonuses, crystalsForRun, mapById, sellValue, wavePlan } from "./config.js";
+import { CARDS, CONFIG, computeBonuses, crystalsForRun, mapById, sellValue, wavePlan } from "./config.js";
 import { compilePath, pointAt } from "./path.js";
 
 function lerpAngle(a, b, t) {
@@ -71,8 +71,16 @@ export class Game {
     this.combo = 0;
     this.comboT = 0;
     this.abilityCd = { meteor: 0, freeze: 0 };
-    this.runBuff = { damage: 0, fireRate: 0, crit: 0, range: 0, enemySpeed: 1 };
+    this.runBuff = {
+      damage: 0, fireRate: 0, crit: 0, range: 0, enemySpeed: 1, enemyHp: 1,
+      coinDrop: 0, interest: 0, discount: 0,
+      tower: { archer: {}, cannon: {}, frost: {}, storm: {}, venom: {}, sniper: {} },
+    };
     this.blessOffer = [];
+    this.cardsTaken = [];
+    this.rerollsLeft = 0;
+    this.armed = null;
+    this.paths = 0;
     this.hint = "done";
     this.bonusCrystals = 0;
     this.result = null;
@@ -98,7 +106,9 @@ export class Game {
     this.phase = "gap";
     this.gapLeft = eco.firstGap;
     this.banner = { text: this.map.name, life: 2.2 };
+    this.rerollsLeft = this.bonuses.rerolls || 0;
     if (!this.hintDone) this.hint = "build";
+    if (this.bonuses.startCard > 0) this.openBlessings(true);
   }
 
   toggleSpeed() {
@@ -144,12 +154,63 @@ export class Game {
     return this.towers.find((t) => t.id === this.selected.id) || null;
   }
 
-  statsFor(tower) {
+  levelStats(type, level, branch) {
+    const cfg = CONFIG.towers[type];
+    if (level <= cfg.levels.length) return cfg.levels[Math.max(1, level) - 1];
+    const path = cfg.paths[branch || 0] || cfg.paths[0];
+    return path.levels[Math.min(path.levels.length, level - cfg.levels.length) - 1];
+  }
+
+  maxLevel(type) {
+    const cfg = CONFIG.towers[type];
+    return cfg.levels.length + cfg.paths[0].levels.length;
+  }
+
+  statsFor(tower, levelOverride, branchOverride) {
     const cfg = CONFIG.towers[tower.type];
-    const lv = cfg.levels[Math.min(cfg.levels.length, tower.level) - 1];
-    const splash = lv.splash ? lv.splash * (1 + this.bonuses.splash) : 0;
+    const level = levelOverride || tower.level;
+    const branch = branchOverride != null ? branchOverride : tower.branch;
+    const lv = this.levelStats(tower.type, level, branch);
+    const mod = (this.runBuff.tower && this.runBuff.tower[tower.type]) || {};
+    let splash = lv.splash ? lv.splash * (1 + this.bonuses.splash) * (1 + (mod.splash || 0)) : 0;
     const range = lv.range * (this.bonuses.range || 1) * (1 + (this.runBuff.range || 0));
-    return { ...lv, splash, range, color: cfg.color };
+    const out = { ...lv, splash, range, color: cfg.color };
+    if (out.slowDur) out.slowDur *= 1 + (mod.slowDur || 0);
+    if (out.chain) out.chain += mod.chain || 0;
+    if (out.poison) out.poison *= 1 + (mod.poison || 0);
+    out.damage *= 1 + (mod.damage || 0);
+    out.fireRate *= 1 + (mod.rate || 0);
+    return out;
+  }
+
+  /** Skutečné poškození a kadence po všech bonusech (pro panel). */
+  effective(stats) {
+    return {
+      damage: stats.damage * this.bonuses.damage * (1 + (this.runBuff.damage || 0)),
+      fireRate: stats.fireRate * this.bonuses.fireRate * (1 + (this.runBuff.fireRate || 0)),
+    };
+  }
+
+  priceCut() {
+    return Math.min(0.5, (this.runBuff.discount || 0));
+  }
+
+  buildCost(type) {
+    const cfg = CONFIG.towers[type];
+    const cut = Math.min(0.5, this.priceCut() + (this.bonuses.discount || 0));
+    return Math.max(1, Math.round(cfg.cost * (1 - cut)));
+  }
+
+  upgradeCost(tower, branch) {
+    const cfg = CONFIG.towers[tower.type];
+    if (tower.level >= this.maxLevel(tower.type)) return 0;
+    let base;
+    if (tower.level < cfg.levels.length) base = cfg.upgrades[tower.level - 1];
+    else {
+      const b = tower.level === cfg.levels.length ? (branch || 0) : (tower.branch || 0);
+      base = cfg.paths[b].costs[tower.level - cfg.levels.length];
+    }
+    return Math.max(1, Math.round(base * (1 - this.priceCut())));
   }
 
   unlocked(type) {
@@ -183,44 +244,124 @@ export class Game {
       this.gapLeft = CONFIG.economy.gapTime;
       this.banner = { text: "Vlna " + this.wave + " odražena", life: 1.6 };
       this.sound("clear");
-      if (this.wave % 5 === 0) this.openBlessings();
+      this.payInterest();
+      if (this.wave % 5 === 0 && this.bonuses.bossHeal) {
+        this.lives += this.bonuses.bossHeal;
+        this.floatText(this.crystal.x, this.crystal.y - 40, "+" + this.bonuses.bossHeal + " ♥", "#ff8b9a", true);
+      }
+      if (this.wave % 5 === 0 || this.wave % 5 === 3) this.openBlessings();
     }
   }
 
-  openBlessings() {
-    const pool = BLESSINGS.slice();
+  payInterest() {
+    const rate = (this.runBuff.interest || 0) + (this.bonuses.interest || 0);
+    if (rate <= 0 || this.coins <= 0) return;
+    const cap = 30 + Math.round((this.runBuff.interest || 0) / 0.06) * 25;
+    const gain = Math.min(cap, Math.floor(this.coins * rate));
+    if (gain <= 0) return;
+    this.coins += gain;
+    this.coinPulse = 0.8;
+    this.floatText(this.lootTarget.x, this.lootTarget.y + 30, "Úroky +" + gain, "#ffd56a", true);
+  }
+
+  rollCards() {
+    const owned = new Set(this.towers.map((t) => t.type));
+    const luck = this.bonuses.rareLuck || 0;
+    const weight = { c: 60 - luck * 18, r: 30 + luck * 10, e: 10 + luck * 8 };
+    const pool = CARDS.filter((card) => {
+      if (card.tower && !owned.has(card.tower)) return false;
+      if (card.id === "smith" && !this.towers.some((t) => t.level < 3)) return false;
+      if (card.id === "glass" && this.lives <= 6) return false;
+      return true;
+    }).map((card) => ({ card, w: weight[card.rarity] * (card.tower ? 1.4 : 1) }));
+    const count = Math.max(3, this.bonuses.cardChoices || 3);
     const offer = [];
-    while (offer.length < 3 && pool.length) {
-      const i = Math.floor(Math.random() * pool.length);
-      offer.push(pool.splice(i, 1)[0]);
+    while (offer.length < count && pool.length) {
+      const total = pool.reduce((sum, item) => sum + item.w, 0);
+      let r = Math.random() * total;
+      let idx = 0;
+      for (; idx < pool.length - 1; idx++) {
+        r -= pool[idx].w;
+        if (r <= 0) break;
+      }
+      offer.push(pool.splice(idx, 1)[0].card);
     }
-    this.blessOffer = offer;
+    return offer;
+  }
+
+  openBlessings(atStart) {
+    this.blessOffer = this.rollCards();
+    this.blessAtStart = !!atStart;
     this.phase = "bless";
+    this.selected = null;
+    this.armed = null;
+  }
+
+  rerollCards() {
+    if (this.phase !== "bless" || this.rerollsLeft <= 0) return false;
+    this.rerollsLeft -= 1;
+    this.blessOffer = this.rollCards();
+    this.sound("ui");
+    return true;
+  }
+
+  cardCoins() {
+    return 40 + this.wave * 9;
   }
 
   pickBlessing(index) {
     if (this.phase !== "bless") return;
     const pick = this.blessOffer[index] || this.blessOffer[0];
-    if (!pick) {
+    const resume = () => {
       this.phase = "gap";
-      this.gapLeft = CONFIG.economy.gapTime;
+      this.gapLeft = this.blessAtStart ? CONFIG.economy.firstGap + 2 : CONFIG.economy.gapTime;
+      this.blessAtStart = false;
+    };
+    if (!pick) {
+      resume();
       return;
     }
     const b = this.runBuff;
-    if (pick.id === "dmg") b.damage += 0.15;
-    else if (pick.id === "rate") b.fireRate += 0.12;
-    else if (pick.id === "coins") {
-      this.coins += 45;
-      this.coinPulse = 0.8;
-    } else if (pick.id === "life") this.lives += 3;
-    else if (pick.id === "slow") b.enemySpeed *= 0.92;
-    else if (pick.id === "crit") b.crit += 0.06;
-    else if (pick.id === "range") b.range += 0.08;
+    const tw = b.tower;
+    switch (pick.id) {
+      case "dmg": b.damage += 0.12; break;
+      case "rate": b.fireRate += 0.1; break;
+      case "coins": this.coins += this.cardCoins(); this.coinPulse = 0.8; break;
+      case "life": this.lives += 3; break;
+      case "range": b.range += 0.08; break;
+      case "interest": b.interest += 0.06; break;
+      case "crit": b.crit += 0.08; break;
+      case "slow": b.enemySpeed *= 0.92; for (const e of this.enemies) e.speed *= 0.92; break;
+      case "discount": b.discount += 0.15; break;
+      case "bounty": b.coinDrop += 0.15; break;
+      case "archer": tw.archer.rate = (tw.archer.rate || 0) + 0.3; break;
+      case "cannon": tw.cannon.splash = (tw.cannon.splash || 0) + 0.25; tw.cannon.damage = (tw.cannon.damage || 0) + 0.15; break;
+      case "frost": tw.frost.slowDur = (tw.frost.slowDur || 0) + 0.5; break;
+      case "storm": tw.storm.chain = (tw.storm.chain || 0) + 1; break;
+      case "venom": tw.venom.poison = (tw.venom.poison || 0) + 0.4; break;
+      case "sniper": tw.sniper.damage = (tw.sniper.damage || 0) + 0.35; break;
+      case "frenzy": b.fireRate += 0.18; b.damage += 0.1; break;
+      case "smith": {
+        const weak = this.towers.filter((t) => t.level < 3).sort((x, y) => x.level - y.level)[0];
+        if (weak) {
+          weak.level += 1;
+          weak.born = 1;
+          this.burst(weak.x, weak.y, "#9af7ff", 16, 70, 0.36);
+        } else {
+          this.coins += this.cardCoins();
+        }
+        break;
+      }
+      case "glass": b.damage += 0.35; this.lives = Math.max(1, this.lives - 5); break;
+      case "greed": b.coinDrop += 0.4; b.enemyHp *= 1.1; break;
+      default: break;
+    }
+    this.cardsTaken.push(pick.id);
     this.blessOffer = [];
-    this.phase = "gap";
-    this.gapLeft = CONFIG.economy.gapTime;
+    resume();
     this.banner = { text: pick.name, life: 1.6 };
     this.sound("upgrade");
+    if (this.hooks.progress) this.hooks.progress("card");
   }
 
   decayFx(dt) {
@@ -315,12 +456,12 @@ export class Game {
     if (!proto || !this.plan) return;
     const mapHp = this.map.hpMult || 1;
     const mapSpeed = this.map.speedMult || 1;
-    let hp = proto.hp * this.plan.hp * mapHp;
+    let hp = proto.hp * this.plan.hp * mapHp * (this.runBuff.enemyHp || 1);
     if (proto.boss) {
       hp *= 1 + Math.max(0, this.wave / 5 - 1) * CONFIG.bossHpGrowth;
     }
     hp = Math.max(1, Math.round(hp));
-    const reward = Math.max(1, Math.round(proto.reward * this.plan.reward * this.bonuses.coinDrop));
+    const reward = Math.max(1, Math.round(proto.reward * this.plan.reward * (this.bonuses.coinDrop + (this.runBuff.coinDrop || 0))));
     const enemy = {
       id: this.nextId++,
       type: typeId,
@@ -369,6 +510,8 @@ export class Game {
         }
       }
       if (e.flash > 0) e.flash -= dt;
+      if (e.brittleT > 0) e.brittleT -= dt;
+      if (e.acidT > 0) e.acidT -= dt;
       e.sinceHit = (e.sinceHit || 0) + dt;
       if (e.poisonT > 0) {
         e.poisonT -= dt;
@@ -449,18 +592,23 @@ export class Game {
       tower.angle = lerpAngle(tower.angle, desired, 1 - Math.exp(-12 * dt));
       if (tower.cooldown > 0) continue;
       this.fire(tower, target, stats, aim);
-      const rate = stats.fireRate * this.bonuses.fireRate * (1 + (this.runBuff.fireRate || 0));
+      const rate = this.effective(stats).fireRate;
       tower.cooldown = rate > 0 ? 1 / rate : 1;
       tower.recoil = 1;
     }
   }
 
   fire(tower, target, stats, aim) {
-    const crit = Math.random() < this.bonuses.crit + (this.runBuff.crit || 0);
-    const damage = stats.damage * this.bonuses.damage * (1 + (this.runBuff.damage || 0)) * (crit ? 2 : 1);
+    const crit = Math.random() < this.bonuses.crit + (this.runBuff.crit || 0) + (stats.critBonus || 0);
+    const damage = stats.damage * this.bonuses.damage * (1 + (this.runBuff.damage || 0)) * (crit ? (stats.critMult || 2) : 1);
     const payload = {
       damage,
       crit,
+      kind: tower.type,
+      brittle: stats.brittle || 0,
+      acid: stats.acid || 0,
+      execute: stats.execute || 0,
+      bounty: stats.bounty || 0,
       armorPen: this.bonuses.armorPen,
       splash: stats.splash || 0,
       slow: stats.slow || 0,
@@ -503,7 +651,6 @@ export class Game {
         poison: stats.poison || 0,
         poisonDur: stats.poisonDur || 0,
         poisonSpread: !!stats.poisonSpread,
-        bossBonus: stats.bossBonus || 0,
         x: tower.x + dx * 14,
         y: tower.y + dy * 14,
         vx: dx * sp,
@@ -549,7 +696,7 @@ export class Game {
       this.damageEnemy(enemy, {
         ...payload,
         damage: dmg,
-        slow: index === hit.length - 1 ? (stats.slow || 0) : 0,
+        slow: stats.shockAll || index === hit.length - 1 ? (stats.slow || 0) : 0,
         slowDur: stats.slowDur || 0,
       }, 1);
       dmg *= stats.chainFall || 0.7;
@@ -607,13 +754,15 @@ export class Game {
           this.damageEnemy(e, p, fall);
         }
       }
-      this.burst(x, y, "#ffb15a", 16, 90, 0.32);
-      this.shake = Math.max(this.shake, 4.5);
+      const icy = p.kind === "frost";
+      this.burst(x, y, icy ? "#bff8ff" : "#ffb15a", icy ? 10 : 16, 90, 0.32);
+      if (!icy) this.shake = Math.max(this.shake, 4.5);
       this.beams.push({
         x1: x, y1: y, x2: x, y2: y,
-        life: 0.2, max: 0.2, color: "#ffd2a4", ring: p.splash,
+        life: 0.2, max: 0.2, color: icy ? "#bff8ff" : "#ffd2a4", ring: p.splash,
       });
-      this.fxSound("explode", 0.07);
+      if (icy) this.fxSound("hit", 0.05);
+      else this.fxSound("explode", 0.07);
       return;
     }
     let victim = this.enemies.find((e) => e.id === p.targetId && !e.dead && e.hp > 0);
@@ -638,11 +787,34 @@ export class Game {
     if (!enemy || enemy.dead || enemy.hp <= 0) return;
     const pen = Math.min(0.85, hit.armorPen || 0);
     const armor = Math.min(0.8, (enemy.armor || 0) * (1 - pen));
-    let amount = hit.damage * Math.max(0.2, fall) * (1 - armor);
+    const acid = enemy.acidT > 0;
+    let amount = hit.damage * Math.max(0.2, fall) * (1 - (acid ? 0 : armor));
     if (hit.bossBonus && enemy.boss) amount *= 1 + hit.bossBonus;
+    let combo = false;
+    if (!hit.poisonTick) {
+      const slowed = enemy.slowT > 0 && enemy.slowFactor < 1;
+      if (hit.kind === "storm" && slowed) { amount *= 1.4; combo = true; }
+      if (hit.kind === "archer" && slowed) { amount *= 1.2; combo = true; }
+      if (hit.kind === "cannon" && enemy.poisonT > 0) { amount *= 1.3; combo = true; }
+    }
+    if (enemy.brittleT > 0) { amount *= 1 + (enemy.brittle || 0); combo = true; }
+    if (acid) amount *= 1 + (enemy.acid || 0);
     amount = Math.max(1, Math.round(amount));
+    if (hit.execute && !enemy.boss && enemy.hp - amount <= enemy.maxHp * hit.execute) {
+      amount = Math.max(amount, Math.ceil(enemy.hp + (enemy.shield || 0)));
+      combo = true;
+    }
     enemy.sinceHit = 0;
-    if (enemy.shield > 0) {
+    if (hit.brittle) {
+      enemy.brittle = Math.max(enemy.brittle || 0, hit.brittle);
+      enemy.brittleT = Math.max(enemy.brittleT || 0, hit.slowDur || 2);
+    }
+    if (hit.acid) {
+      enemy.acid = Math.max(enemy.acid || 0, hit.acid);
+      enemy.acidT = Math.max(enemy.acidT || 0, hit.poisonDur || 3);
+    }
+    const pierce = hit.kind === "sniper" || acid;
+    if (enemy.shield > 0 && !pierce) {
       const blocked = Math.min(enemy.shield, amount);
       enemy.shield -= blocked;
       amount -= blocked;
@@ -659,7 +831,7 @@ export class Game {
       pos.x + (Math.random() - 0.5) * 8,
       pos.y - enemy.radius - 2,
       hit.crit ? amount + "!" : String(amount),
-      hit.crit ? "#ffe27a" : "#f6f3ff",
+      hit.crit ? "#ffe27a" : combo ? "#7ef6ff" : hit.poisonTick ? "#b6f58a" : "#f6f3ff",
       !!hit.crit,
     );
     const allowSlow = hit.slow && (!enemy.flying || hit.slowFlying);
@@ -678,6 +850,7 @@ export class Game {
     enemy.hp = 0;
     enemy.dead = true;
     this.kills += 1;
+    if (hit.bounty) enemy.reward = Math.round(enemy.reward * (1 + hit.bounty));
     this.noteCombo(pos);
     if (enemy.chest) {
       const drop = enemy.crystalDrop || 2;
@@ -743,7 +916,7 @@ export class Game {
         hp,
         maxHp: hp,
         speed: child.speed * this.plan.speed * mapSpeed,
-        reward: Math.max(1, Math.round(child.reward * this.plan.reward * this.bonuses.coinDrop)),
+        reward: Math.max(1, Math.round(child.reward * this.plan.reward * (this.bonuses.coinDrop + (this.runBuff.coinDrop || 0)))),
         leak: child.leak,
         radius: child.radius,
         armor: child.armor || 0,
@@ -935,7 +1108,8 @@ export class Game {
     }
     if (best) {
       this.selected = { kind: "tower", id: best.id };
-      return;
+      this.armed = null;
+      return true;
     }
     let slot = null;
     let slotD = 32;
@@ -950,9 +1124,19 @@ export class Game {
     }
     if (slot !== null) {
       this.selected = { kind: "slot", i: slot };
-      return;
+      if (this.armed) {
+        const type = this.armed;
+        if (this.coins >= this.buildCost(type)) {
+          this.build(type);
+          return true;
+        }
+        this.toastMsg("Máš málo mincí");
+        this.sound("deny");
+      }
+      return true;
     }
     this.selected = null;
+    this.armed = null;
   }
 
   build(type) {
@@ -974,12 +1158,14 @@ export class Game {
       this.sound("deny");
       return;
     }
-    if (this.coins < cfg.cost) {
+    const price = this.buildCost(type);
+    if (this.coins < price) {
       this.toastMsg("Máš málo mincí");
       this.sound("deny");
       return;
     }
-    this.coins -= cfg.cost;
+    this.coins -= price;
+    this.armed = null;
     const s = this.slots[sel.i];
     const tower = {
       id: this.nextId++,
@@ -988,7 +1174,8 @@ export class Game {
       x: s.x,
       y: s.y,
       level: 1,
-      spent: cfg.cost,
+      branch: null,
+      spent: price,
       cooldown: 0.12,
       recoil: 1,
       angle: -Math.PI / 2,
@@ -1004,31 +1191,41 @@ export class Game {
     this.advanceHint("build");
   }
 
-  upgrade() {
-    if (this.mode !== "play" || this.paused) return;
+  upgrade(branch) {
+    if (this.mode !== "play" || this.paused) return false;
     const tower = this.selectedTower();
-    if (!tower) return;
+    if (!tower) return false;
     const cfg = CONFIG.towers[tower.type];
-    if (tower.level >= cfg.levels.length) {
+    const max = this.maxLevel(tower.type);
+    if (tower.level >= max) {
       this.toastMsg("Nejvyšší úroveň");
-      return;
+      return false;
     }
-    const cost = cfg.upgrades[tower.level - 1];
+    const choosing = tower.level === cfg.levels.length;
+    const pick = choosing ? (branch === 1 ? 1 : 0) : tower.branch;
+    const cost = this.upgradeCost(tower, pick);
     if (this.coins < cost) {
       this.toastMsg("Máš málo mincí");
       this.sound("deny");
-      return;
+      return false;
     }
     this.coins -= cost;
     tower.spent += cost;
     tower.level += 1;
+    if (choosing) {
+      tower.branch = pick;
+      this.paths += 1;
+      if (this.hooks.progress) this.hooks.progress("path");
+    }
     tower.recoil = 1;
     tower.born = 1;
-    if (tower.level >= cfg.levels.length && this.hooks.progress) this.hooks.progress("master");
+    if (tower.level >= max && this.hooks.progress) this.hooks.progress("master");
     this.advanceHint("upgrade");
-    this.burst(tower.x, tower.y, "#9af7ff", 16, 70, 0.36);
+    this.burst(tower.x, tower.y, choosing || tower.level >= max ? "#ffd56a" : "#9af7ff", choosing ? 26 : 16, 80, 0.4);
     this.sound("upgrade");
-    this.toastMsg("Věž vylepšena");
+    this.buzz(choosing ? [12, 30, 12] : 12);
+    this.toastMsg(choosing ? cfg.paths[pick].name + "!" : "Věž vylepšena");
+    return true;
   }
 
   sell() {

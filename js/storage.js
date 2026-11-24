@@ -19,6 +19,8 @@ export function defaultSave() {
     maxTowers: 0,
     earlyCalls: 0,
     masteries: 0,
+    paths: 0,
+    cardsPicked: 0,
     runs: 0,
     kills: 0,
   };

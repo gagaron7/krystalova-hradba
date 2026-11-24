@@ -24,13 +24,14 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function drawGround(ctx, w, h, now) {
+function drawGround(ctx, w, h, now, area) {
   const g = ctx.createLinearGradient(0, 0, 0, h);
   g.addColorStop(0, "#141a28");
   g.addColorStop(0.42, "#14241c");
   g.addColorStop(1, "#10161a");
   ctx.fillStyle = g;
-  ctx.fillRect(-30, -30, w + 60, h + 60);
+  if (area) ctx.fillRect(area.x0 - 2, area.y0 - 2, area.x1 - area.x0 + 4, area.y1 - area.y0 + 4);
+  else ctx.fillRect(-30, -30, w + 60, h + 60);
 
   for (let i = 0; i < 42; i++) {
     const x = hash01(i, 1) * w;
@@ -167,10 +168,23 @@ function drawSlot(ctx, slot, state, now) {
   ctx.fill();
   ctx.beginPath();
   ctx.arc(0, 0, 16, 0, Math.PI * 2);
-  ctx.fillStyle = state === "selected" ? "#4a4032" : "#2c291f";
+  if (state.armed) {
+    const pulse = 0.5 + 0.5 * Math.sin(now * 6);
+    ctx.save();
+    ctx.globalAlpha = 0.25 + pulse * 0.35;
+    ctx.fillStyle = state.armed;
+    ctx.beginPath();
+    ctx.arc(0, 0, 22 + pulse * 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.beginPath();
+    ctx.arc(0, 0, 16, 0, Math.PI * 2);
+  }
+  const sel = state === "selected" || state.selected;
+  ctx.fillStyle = sel ? "#4a4032" : "#2c291f";
   ctx.fill();
-  ctx.lineWidth = state === "selected" ? 2.5 : 1.4;
-  ctx.strokeStyle = state === "selected" ? "#ffd56a" : "rgba(190, 230, 220, 0.55)";
+  ctx.lineWidth = sel ? 2.5 : 1.4;
+  ctx.strokeStyle = sel ? "#ffd56a" : state.armed ? state.armed : "rgba(190, 230, 220, 0.55)";
   if (state !== "filled") {
     ctx.setLineDash([3, 4]);
     ctx.lineDashOffset = -now * 14;
@@ -381,6 +395,54 @@ function drawTower(ctx, tower, now) {
   else if (tower.type === "venom") drawVenom(ctx, tower);
   else drawArcher(ctx, tower);
   ctx.restore();
+  drawPips(ctx, tower);
+}
+
+const PATH_COLORS = ["#ffd56a", "#7ef6ff"];
+
+function drawPips(ctx, tower) {
+  if (tower.icon) return;
+  const n = tower.level || 1;
+  ctx.save();
+  ctx.translate(tower.x, tower.y + 21);
+  const gap = 6;
+  const start = -((n - 1) * gap) / 2;
+  for (let i = 0; i < n; i++) {
+    ctx.beginPath();
+    ctx.arc(start + i * gap, 0, 2.4, 0, Math.PI * 2);
+    ctx.fillStyle = i >= 3 ? PATH_COLORS[tower.branch || 0] : "#f6f1e6";
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
+    ctx.stroke();
+  }
+  ctx.restore();
+  if (tower.level >= 4) {
+    ctx.save();
+    ctx.translate(tower.x, tower.y);
+    ctx.strokeStyle = PATH_COLORS[tower.branch || 0];
+    ctx.globalAlpha = 0.85;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 19 + (tower.level - 4) * 2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/** Malý náhled věže pro kartu ve spodní liště. */
+export function drawTowerIcon(canvas, type, level, branch) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const size = canvas.clientWidth || 44;
+  canvas.width = Math.round(size * dpr);
+  canvas.height = Math.round(size * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform((size / 44) * dpr, 0, 0, (size / 44) * dpr, 0, 0);
+  ctx.clearRect(0, 0, 44, 44);
+  drawTower(ctx, {
+    x: 22, y: 21, type, level: level || 1, branch: branch || 0,
+    angle: -Math.PI / 2, recoil: 0, born: 0, icon: true,
+  }, 0);
 }
 
 function drawEnemy(ctx, e, x, y, now) {
@@ -645,11 +707,19 @@ function drawRange(ctx, x, y, range, color) {
   ctx.restore();
 }
 
-export function render(ctx, game, now) {
+export function render(ctx, game, now, view) {
   const { w, h } = CONFIG.view;
-  ctx.setTransform(ctx.canvas.width / w, 0, 0, ctx.canvas.height / h, 0, 0);
+  const v = view || { scale: ctx.canvas.width / w, ox: 0, oy: 0, dpr: 1, cw: ctx.canvas.width, ch: ctx.canvas.height };
+  ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
   ctx.fillStyle = "#0c1014";
-  ctx.fillRect(-40, -40, w + 80, h + 80);
+  ctx.fillRect(0, 0, v.cw, v.ch);
+  ctx.setTransform(v.dpr * v.scale, 0, 0, v.dpr * v.scale, v.dpr * v.ox, v.dpr * v.oy);
+  const area = {
+    x0: -v.ox / v.scale,
+    y0: -v.oy / v.scale,
+    x1: (v.cw - v.ox) / v.scale,
+    y1: (v.ch - v.oy) / v.scale,
+  };
 
   const mag = game.shake || 0;
   const sx = Math.sin(now * 52) * mag;
@@ -657,7 +727,7 @@ export function render(ctx, game, now) {
   ctx.save();
   ctx.translate(sx, sy);
 
-  drawGround(ctx, w, h, now);
+  drawGround(ctx, w, h, now, area);
   drawPath(ctx, game.path.points, now);
   drawPortal(ctx, game.portal.x, game.portal.y, now);
 
@@ -668,8 +738,9 @@ export function render(ctx, game, now) {
 
   for (let i = 0; i < game.slots.length; i++) {
     const filled = game.towers.some((t) => t.slot === i);
-    const state = filled ? "filled" : i === selectedSlot ? "selected" : "empty";
-    if (state === "filled") continue;
+    if (filled) continue;
+    let state = i === selectedSlot ? "selected" : "empty";
+    if (game.armed) state = { armed: CONFIG.towers[game.armed].color, selected: i === selectedSlot };
     drawSlot(ctx, game.slots[i], state, now);
   }
 
@@ -694,6 +765,17 @@ export function render(ctx, game, now) {
     const p = pointAt(game.path, e.dist);
     const bob = Math.sin(now * (e.flying ? 6 : 8) + e.wobble) * (e.flying ? 8 : 2.4);
     drawEnemy(ctx, e, p.x, p.y + bob, now);
+    if (e.brittleT > 0 || e.acidT > 0) {
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 3]);
+      ctx.lineDashOffset = now * 20;
+      ctx.strokeStyle = e.acidT > 0 ? "rgba(182, 245, 138, 0.9)" : "rgba(220, 250, 255, 0.9)";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y + bob, e.radius + 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   for (const p of game.projectiles) drawProjectile(ctx, p, now);
@@ -757,22 +839,25 @@ export function render(ctx, game, now) {
 
   ctx.restore();
 
+  ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
+  const W = v.cw;
+  const H = v.ch;
   if (game.freezeT > 0) {
     ctx.fillStyle = "rgba(140, 220, 255, 0.13)";
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(0, 0, W, H);
   }
   if (game.slowMo > 0) {
     ctx.fillStyle = `rgba(255, 220, 160, ${0.16 * Math.min(1, game.slowMo / 0.4)})`;
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(0, 0, W, H);
   }
   if (game.hurt > 0) {
     ctx.fillStyle = `rgba(160, 16, 36, ${0.28 * Math.min(1, game.hurt)})`;
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(0, 0, W, H);
   }
 
-  const vig = ctx.createRadialGradient(w / 2, h * 0.45, h * 0.25, w / 2, h * 0.5, h * 0.72);
+  const vig = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.3, W / 2, H * 0.5, H * 0.75);
   vig.addColorStop(0, "rgba(0,0,0,0)");
   vig.addColorStop(1, "rgba(0,0,0,0.38)");
   ctx.fillStyle = vig;
-  ctx.fillRect(0, 0, w, h);
+  ctx.fillRect(0, 0, W, H);
 }

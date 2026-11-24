@@ -8,7 +8,7 @@ export const CONFIG = {
 
   economy: {
     startLives: 20,
-    startCoins: 145,
+    startCoins: 130,
     sellRefund: 0.6,
     gapTime: 6,
     firstGap: 2.4,
@@ -26,7 +26,7 @@ export const CONFIG = {
    * Životy nepřátel rostou exponenciálně: vlna 1 = 1×, dál hpPower^(vlna-1).
    * Kolem vlny 8–12 má první běh padnout, meta ho posouvá dál.
    */
-  hpPower: 1.18,
+  hpPower: 1.195,
   speedGrowth: 0.02,
   rewardGrowth: 0.035,
   /** Každý další boss (vlna 10, 15, …) je o tolik tužší. */
@@ -103,95 +103,213 @@ export const CONFIG = {
     },
   ],
 
+  /**
+   * Věže: úrovně 1–3 jsou společné, na 3. úrovni si hráč vybere jednu ze dvou
+   * specializací (paths) a ta má úrovně 4 a 5. Úroveň 5 je drahý cíl na střed hry.
+   */
   towers: {
     archer: {
       name: "Střelec",
       role: "Rychlé střely",
+      icon: "🏹",
       color: "#f0c14a",
       cost: 50,
       unlock: null,
-      mastery: "Mistrovská: každý výstřel vyšle i druhý šíp.",
-      upgrades: [40, 75, 120],
+      upgrades: [40, 75],
       levels: [
         { damage: 9, fireRate: 2.05, range: 140, projectileSpeed: 480 },
         { damage: 14, fireRate: 2.4, range: 154, projectileSpeed: 510 },
         { damage: 22, fireRate: 2.8, range: 168, projectileSpeed: 540 },
-        { damage: 30, fireRate: 3.15, range: 180, projectileSpeed: 560, shots: 2 },
+      ],
+      paths: [
+        {
+          name: "Salva",
+          desc: "Víc šípů naráz. Skvělé na roje a úlomky.",
+          costs: [120, 260],
+          levels: [
+            { damage: 26, fireRate: 3.0, range: 176, projectileSpeed: 560, shots: 2 },
+            { damage: 34, fireRate: 3.4, range: 186, projectileSpeed: 590, shots: 3 },
+          ],
+        },
+        {
+          name: "Lovecké oko",
+          desc: "Velký dosah a silné kritické zásahy na tuhé cíle.",
+          costs: [130, 280],
+          levels: [
+            { damage: 44, fireRate: 2.5, range: 205, projectileSpeed: 640, critBonus: 0.2, critMult: 2.5 },
+            { damage: 66, fireRate: 2.7, range: 225, projectileSpeed: 680, critBonus: 0.3, critMult: 3 },
+          ],
+        },
       ],
     },
     cannon: {
       name: "Dělo",
       role: "Výbuch",
+      icon: "💣",
       color: "#e07a3d",
       cost: 100,
       unlock: null,
-      mastery: "Mistrovská: výbuch navíc zpomalí.",
-      upgrades: [80, 125, 180],
+      upgrades: [80, 125],
       levels: [
         { damage: 24, fireRate: 0.58, range: 126, projectileSpeed: 230, splash: 48 },
         { damage: 38, fireRate: 0.66, range: 138, projectileSpeed: 245, splash: 58 },
         { damage: 56, fireRate: 0.74, range: 150, projectileSpeed: 260, splash: 68 },
-        { damage: 78, fireRate: 0.82, range: 162, projectileSpeed: 270, splash: 82, slow: 0.28, slowDur: 1.1 },
+      ],
+      paths: [
+        {
+          name: "Hmoždíř",
+          desc: "Obří výbuch a velký dosah. Čistí celé skupiny.",
+          costs: [180, 380],
+          levels: [
+            { damage: 92, fireRate: 0.7, range: 178, projectileSpeed: 250, splash: 92 },
+            { damage: 150, fireRate: 0.74, range: 196, projectileSpeed: 260, splash: 112 },
+          ],
+        },
+        {
+          name: "Otřes",
+          desc: "Rychlejší střelba a výbuch, který stíny zbrzdí.",
+          costs: [170, 340],
+          levels: [
+            { damage: 70, fireRate: 0.86, range: 160, projectileSpeed: 280, splash: 76, slow: 0.35, slowDur: 1.1 },
+            { damage: 102, fireRate: 0.96, range: 170, projectileSpeed: 300, splash: 86, slow: 0.5, slowDur: 1.4 },
+          ],
+        },
       ],
     },
     frost: {
       name: "Mrazák",
       role: "Zpomaluje",
+      icon: "❄️",
       color: "#7ef6ff",
       cost: 80,
       unlock: null,
-      mastery: "Mistrovská: mráz bere i netopýry.",
-      upgrades: [65, 100, 150],
+      upgrades: [65, 100],
       levels: [
         { damage: 4, fireRate: 1.2, range: 132, projectileSpeed: 320, slow: 0.34, slowDur: 1.7 },
         { damage: 7, fireRate: 1.4, range: 146, projectileSpeed: 340, slow: 0.44, slowDur: 1.9 },
         { damage: 11, fireRate: 1.6, range: 158, projectileSpeed: 360, slow: 0.52, slowDur: 2.2 },
-        { damage: 15, fireRate: 1.8, range: 172, projectileSpeed: 380, slow: 0.62, slowDur: 2.5, slowFlying: true },
+      ],
+      paths: [
+        {
+          name: "Ledová bouře",
+          desc: "Mráz se rozprskne do okolí a zasáhne i netopýry.",
+          costs: [150, 300],
+          levels: [
+            { damage: 14, fireRate: 1.7, range: 170, projectileSpeed: 380, slow: 0.58, slowDur: 2.4, slowFlying: true, splash: 46 },
+            { damage: 20, fireRate: 1.9, range: 184, projectileSpeed: 400, slow: 0.64, slowDur: 2.8, slowFlying: true, splash: 64 },
+          ],
+        },
+        {
+          name: "Křehký led",
+          desc: "Zmrzlí stíni dostávají víc poškození od všech věží.",
+          costs: [150, 300],
+          levels: [
+            { damage: 16, fireRate: 1.8, range: 166, projectileSpeed: 380, slow: 0.5, slowDur: 2.2, brittle: 0.25 },
+            { damage: 24, fireRate: 2.0, range: 176, projectileSpeed: 400, slow: 0.55, slowDur: 2.6, brittle: 0.4, slowFlying: true },
+          ],
+        },
       ],
     },
     sniper: {
       name: "Ostrostřelec",
       role: "Těžké zásahy",
+      icon: "🎯",
       color: "#d2b0ff",
       cost: 155,
       unlock: "sniper",
-      mastery: "Mistrovská: proti bossům +50 % poškození.",
-      upgrades: [120, 180, 240],
+      upgrades: [120, 180],
       levels: [
         { damage: 58, fireRate: 0.42, range: 240, hitscan: true },
         { damage: 92, fireRate: 0.48, range: 275, hitscan: true },
         { damage: 140, fireRate: 0.54, range: 310, hitscan: true },
-        { damage: 200, fireRate: 0.6, range: 350, hitscan: true, bossBonus: 0.5 },
+      ],
+      paths: [
+        {
+          name: "Popravčí",
+          desc: "Dorazí slabé stíny naráz a drtí bosse.",
+          costs: [240, 480],
+          levels: [
+            { damage: 200, fireRate: 0.6, range: 350, hitscan: true, bossBonus: 0.5, execute: 0.12 },
+            { damage: 300, fireRate: 0.66, range: 380, hitscan: true, bossBonus: 0.8, execute: 0.2 },
+          ],
+        },
+        {
+          name: "Lovec odměn",
+          desc: "Každé jeho zabití dá mnohem víc mincí.",
+          costs: [220, 420],
+          levels: [
+            { damage: 170, fireRate: 0.62, range: 330, hitscan: true, bounty: 0.6 },
+            { damage: 240, fireRate: 0.7, range: 360, hitscan: true, bounty: 1.0 },
+          ],
+        },
       ],
     },
     storm: {
       name: "Bouře",
       role: "Řetězový blesk",
+      icon: "⚡",
       color: "#c9b6ff",
       cost: 125,
       unlock: null,
-      mastery: "Mistrovská: blesk skočí na dalšího stína.",
-      upgrades: [90, 140, 200],
+      upgrades: [90, 140],
       levels: [
         { damage: 16, fireRate: 0.72, range: 128, chain: 2, chainFall: 0.65 },
         { damage: 26, fireRate: 0.82, range: 140, chain: 3, chainFall: 0.68 },
         { damage: 38, fireRate: 0.92, range: 152, chain: 3, chainFall: 0.72 },
-        { damage: 52, fireRate: 1.05, range: 164, chain: 4, chainFall: 0.75, slow: 0.2, slowDur: 0.6 },
+      ],
+      paths: [
+        {
+          name: "Přetížení",
+          desc: "Blesk přeskočí na mnohem víc stínů.",
+          costs: [200, 400],
+          levels: [
+            { damage: 52, fireRate: 1.05, range: 164, chain: 5, chainFall: 0.78 },
+            { damage: 76, fireRate: 1.15, range: 176, chain: 7, chainFall: 0.82 },
+          ],
+        },
+        {
+          name: "Statický šok",
+          desc: "Každý zasažený stín na chvíli skoro zastaví.",
+          costs: [190, 380],
+          levels: [
+            { damage: 48, fireRate: 1.0, range: 160, chain: 3, chainFall: 0.75, slow: 0.5, slowDur: 0.6, shockAll: true },
+            { damage: 70, fireRate: 1.1, range: 170, chain: 4, chainFall: 0.8, slow: 0.7, slowDur: 0.8, shockAll: true },
+          ],
+        },
       ],
     },
     venom: {
       name: "Jedovka",
       role: "Jedovatý dotek",
+      icon: "🧪",
       color: "#9be36a",
       cost: 90,
       unlock: null,
-      mastery: "Mistrovská: jed přeskočí na souseda.",
-      upgrades: [70, 110, 160],
+      upgrades: [70, 110],
       levels: [
         { damage: 4, fireRate: 1.15, range: 124, projectileSpeed: 300, poison: 7, poisonDur: 2.4 },
         { damage: 6, fireRate: 1.3, range: 136, projectileSpeed: 320, poison: 11, poisonDur: 2.8 },
         { damage: 8, fireRate: 1.45, range: 148, projectileSpeed: 340, poison: 16, poisonDur: 3.2 },
-        { damage: 10, fireRate: 1.6, range: 160, projectileSpeed: 360, poison: 22, poisonDur: 3.6, poisonSpread: true },
+      ],
+      paths: [
+        {
+          name: "Mor",
+          desc: "Silný jed, který při smrti přeskočí na sousedy.",
+          costs: [160, 320],
+          levels: [
+            { damage: 10, fireRate: 1.6, range: 160, projectileSpeed: 360, poison: 24, poisonDur: 3.6, poisonSpread: true },
+            { damage: 14, fireRate: 1.8, range: 172, projectileSpeed: 380, poison: 38, poisonDur: 4, poisonSpread: true },
+          ],
+        },
+        {
+          name: "Kyselina",
+          desc: "Rozleptá brnění i štíty, zasažení berou víc ode všech.",
+          costs: [150, 300],
+          levels: [
+            { damage: 9, fireRate: 1.55, range: 158, projectileSpeed: 360, poison: 18, poisonDur: 3.4, acid: 0.2 },
+            { damage: 12, fireRate: 1.7, range: 170, projectileSpeed: 380, poison: 26, poisonDur: 4, acid: 0.35 },
+          ],
+        },
       ],
     },
   },
@@ -242,6 +360,15 @@ export const CONFIG = {
     { id: "freeze1", branch: "sila", name: "Zmrazení času", desc: "Na 3 s téměř zastaví stíny. Odpočinek 36 s.", cost: 58, req: ["slow1"], effect: { ability: "freeze" } },
     { id: "gold3", branch: "zlato", name: "Truhlice", desc: "+60 mincí na začátku tažení", cost: 44, req: ["gold2"], effect: { startCoins: 60 } },
     { id: "drop3", branch: "zlato", name: "Královská kořist", desc: "+15 % mincí z nepřátel", cost: 48, req: ["crys1"], effect: { coinDrop: 0.15 } },
+
+    { id: "reroll1", branch: "takt", name: "Šťastná ruka", desc: "2× za tažení přehodíš nabídku karet", cost: 14, req: [], effect: { rerolls: 2 } },
+    { id: "start1", branch: "takt", name: "Výbava", desc: "Na začátku tažení si vybereš 1 kartu", cost: 26, req: ["reroll1"], effect: { startCard: 1 } },
+    { id: "rare1", branch: "takt", name: "Vzácné karty", desc: "Vzácné a epické karty chodí častěji", cost: 34, req: ["reroll1"], effect: { rareLuck: 1 } },
+    { id: "cards4", branch: "takt", name: "Široký výběr", desc: "Nabídka 4 karet místo 3", cost: 52, req: ["start1"], effect: { cardChoices: 1 } },
+    { id: "reroll2", branch: "takt", name: "Karetní mistr", desc: "+2 další přehození za tažení", cost: 40, req: ["rare1"], effect: { rerolls: 2 } },
+    { id: "interest1", branch: "zlato", name: "Spořivost", desc: "Po každé vlně +4 % z nevyužitých mincí (max 30)", cost: 22, req: ["gold1"], effect: { interest: 0.04 } },
+    { id: "heal1", branch: "srdce", name: "Léčivý krystal", desc: "Po každém bossovi +2 životy", cost: 28, req: ["life1"], effect: { bossHeal: 2 } },
+    { id: "build1", branch: "srdce", name: "Stavitelský cech", desc: "Stavba věží o 10 % levnější", cost: 36, req: ["life1"], effect: { discount: 0.1 } },
   ],
 };
 
@@ -260,24 +387,59 @@ export const ACHIEVEMENTS = [
   { id: "towers6", name: "Šest věží", desc: "Postav v jednom tažení 6 věží.", reward: 10, test: (s) => (s.maxTowers || 0) >= 6 },
   { id: "kills100", name: "Lovec stínů", desc: "Zabij celkem 100 nepřátel.", reward: 10, test: (s) => (s.kills || 0) >= 100 },
   { id: "early", name: "Netrpělivost", desc: "Vyvolej vlnu dřív pětkrát.", reward: 8, test: (s) => (s.earlyCalls || 0) >= 5 },
-  { id: "master", name: "Mistr věže", desc: "Doveď věž na mistrovskou úroveň.", reward: 14, test: (s) => (s.masteries || 0) >= 1 },
+  { id: "master", name: "Mistr věže", desc: "Doveď věž na 5. úroveň.", reward: 14, test: (s) => (s.masteries || 0) >= 1 },
+  { id: "path", name: "Specialista", desc: "Zvol věži specializaci na 3. úrovni.", reward: 6, test: (s) => (s.paths || 0) >= 1 },
+  { id: "cards10", name: "Karbaník", desc: "Vyber celkem 10 karet.", reward: 10, test: (s) => (s.cardsPicked || 0) >= 10 },
   { id: "maps", name: "Tři stezky", desc: "Odemkni Krystalovou propast.", reward: 16, test: (s) => s.bestWave >= 14 },
 ];
 
-export const BLESSINGS = [
-  { id: "dmg", name: "Ostřejší noc", desc: "+15 % poškození do konce tažení" },
-  { id: "rate", name: "Horečná střelba", desc: "+12 % kadence do konce tažení" },
-  { id: "coins", name: "Měšec z hlíny", desc: "Hned 45 mincí" },
-  { id: "life", name: "Druhý dech", desc: "+3 životy" },
-  { id: "slow", name: "Hustá mlha", desc: "Stíny jsou o 8 % pomalejší" },
-  { id: "crit", name: "Štěstěna", desc: "+6 % šance na kritický zásah" },
-  { id: "range", name: "Daleký zrak", desc: "+8 % dosah věží" },
+/**
+ * Karty v tažení: po vlně 3, 5, 8, 10, 13, 15… vybereš 1 ze 3.
+ * rarity: c = běžná, r = vzácná, e = epická (často s háčkem).
+ * tower: karta se nabízí jen, když tu věž máš postavenou.
+ */
+export const CARDS = [
+  { id: "dmg", rarity: "c", name: "Ostřejší noc", desc: "+12 % poškození všech věží" },
+  { id: "rate", rarity: "c", name: "Horečná střelba", desc: "+10 % kadence všech věží" },
+  { id: "coins", rarity: "c", name: "Měšec", desc: "Hned mince navíc (roste s vlnou)" },
+  { id: "life", rarity: "c", name: "Druhý dech", desc: "+3 životy" },
+  { id: "range", rarity: "c", name: "Daleký zrak", desc: "+8 % dosah věží" },
+  { id: "interest", rarity: "c", name: "Úroky", desc: "Po každé vlně +6 % z nevyužitých mincí" },
+  { id: "crit", rarity: "r", name: "Štěstěna", desc: "+8 % šance na kritický zásah" },
+  { id: "slow", rarity: "r", name: "Hustá mlha", desc: "Všichni stíni jsou o 8 % pomalejší" },
+  { id: "discount", rarity: "r", name: "Cech stavitelů", desc: "Stavba a vylepšení o 15 % levnější" },
+  { id: "bounty", rarity: "r", name: "Lovci odměn", desc: "+15 % mincí z nepřátel" },
+  { id: "archer", rarity: "r", tower: "archer", name: "Rychlé tětivy", desc: "Střelci +30 % kadence" },
+  { id: "cannon", rarity: "r", tower: "cannon", name: "Větší nálože", desc: "Dělo +25 % výbuch a +15 % poškození" },
+  { id: "frost", rarity: "r", tower: "frost", name: "Věčný mráz", desc: "Mrazák zpomaluje o 50 % déle" },
+  { id: "storm", rarity: "r", tower: "storm", name: "Vodivý vzduch", desc: "Bouře skočí o 1 stína dál" },
+  { id: "venom", rarity: "r", tower: "venom", name: "Silnější jed", desc: "Jedovka +40 % jedu" },
+  { id: "sniper", rarity: "r", tower: "sniper", name: "Těžké náboje", desc: "Ostrostřelec +35 % poškození" },
+  { id: "frenzy", rarity: "e", name: "Bouřlivá noc", desc: "+18 % kadence a +10 % poškození" },
+  { id: "smith", rarity: "e", name: "Kovářův dar", desc: "Nejslabší věž (do 3. úrovně) se zdarma vylepší" },
+  { id: "glass", rarity: "e", name: "Skleněné dělo", desc: "+35 % poškození, ale −5 životů", trade: true },
+  { id: "greed", rarity: "e", name: "Chamtivost", desc: "+40 % mincí, ale stíni mají +10 % životů", trade: true },
 ];
+
+/** Souhry mezi věžemi — platí vždy, ukazují se v panelu věže. */
+export const SYNERGIES = [
+  { id: "super", tower: "storm", with: "frost", name: "Supravodič", desc: "Bouře dává zpomaleným stínům +40 %" },
+  { id: "boom", tower: "cannon", with: "venom", name: "Výbušný jed", desc: "Dělo dává otráveným stínům +30 %" },
+  { id: "pierce", tower: "sniper", with: null, name: "Průraz", desc: "Ostrostřelec prostřelí štíty" },
+  { id: "hunt", tower: "archer", with: "frost", name: "Lov na led", desc: "Střelec dává zpomaleným stínům +20 %" },
+];
+
+export const RARITY = {
+  c: { name: "Běžná", color: "#c3b8a6" },
+  r: { name: "Vzácná", color: "#7ef6ff" },
+  e: { name: "Epická", color: "#e2a6ff" },
+};
 
 export const BRANCHES = [
   { id: "sila", name: "Síla věží" },
   { id: "zlato", name: "Měšec a kořist" },
   { id: "srdce", name: "Srdce krystalu" },
+  { id: "takt", name: "Taktika a karty" },
 ];
 
 export function emptyBonuses() {
@@ -294,6 +456,13 @@ export function emptyBonuses() {
     crystalGain: 0,
     range: 1,
     bossDamage: 0,
+    rerolls: 0,
+    startCard: 0,
+    rareLuck: 0,
+    cardChoices: 3,
+    interest: 0,
+    bossHeal: 0,
+    discount: 0,
     abilities: {},
     unlocks: {},
   };
@@ -317,6 +486,13 @@ export function computeBonuses(owned) {
     if (e.crystalGain) b.crystalGain += e.crystalGain;
     if (e.range) b.range += e.range;
     if (e.bossDamage) b.bossDamage += e.bossDamage;
+    if (e.rerolls) b.rerolls += e.rerolls;
+    if (e.startCard) b.startCard += e.startCard;
+    if (e.rareLuck) b.rareLuck += e.rareLuck;
+    if (e.cardChoices) b.cardChoices += e.cardChoices;
+    if (e.interest) b.interest += e.interest;
+    if (e.bossHeal) b.bossHeal += e.bossHeal;
+    if (e.discount) b.discount += e.discount;
     if (e.ability) b.abilities[e.ability] = true;
     if (e.unlock) b.unlocks[e.unlock] = true;
   }
@@ -324,7 +500,7 @@ export function computeBonuses(owned) {
 }
 
 export function wavePlan(wave) {
-  const hp = Math.pow(CONFIG.hpPower, wave - 1) * (wave > 7 ? Math.pow(1.14, wave - 7) : 1);
+  const hp = Math.pow(CONFIG.hpPower, wave - 1) * (wave > 7 ? Math.pow(1.15, wave - 7) : 1);
   const speed = 1 + (wave - 1) * CONFIG.speedGrowth;
   const reward = (1 + (wave - 1) * CONFIG.rewardGrowth) * (wave <= 3 ? 1.55 : 1);
   const groups = [];
